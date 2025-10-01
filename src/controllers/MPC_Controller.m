@@ -43,6 +43,8 @@ classdef MPC_Controller < handle
 
             % Optimierungsproblem aufbauen
             obj.constructOptimizationProblem();
+
+            disp('MPC Controller initialized.');
         end
         
         function constructOptimizationProblem(obj)
@@ -65,22 +67,25 @@ classdef MPC_Controller < handle
 
 
             constraints = obj.computeConstraints(x1, p_in, p_g_in, p_g_out, p_b_ch, p_b_dch, delta_b_ch, delta_b_dch, delta_g_in, delta_g_out);
+            disp('Constraints formulated.');
             cost = obj.computeCost(p_in, p_b_ch, p_b_dch, p_g_in);
-            
+            disp('Cost function formulated.');
 
             solver_settings = sdpsettings('solver','mosek','verbose',1);
 
             obj.controller = optimizer(constraints, cost, solver_settings, ...
                                        {x1, p_in}, ... % Input parameters
-                                        {p_b_ch, p_b_dch, p_g_in}); % Output  - of optimization variables
+                                        {p_b_ch, p_b_dch, p_g_in, p_g_out}); % Output  - of optimization variables
+            disp('YALMIP optimizer created.');
 
         end
 
         function cost = computeCost(obj, p_in, p_b_ch, p_b_dch, p_g_in)
-            u = [p_in - p_b_ch; p_in - p_b_dch; p_g_in];
-            cost = u'*obj.R_cost*u;
-
-
+            cost = 0;
+            for k = 1:obj.N_pred
+                u = [p_in(k) - p_b_ch(k); p_in(k) - p_b_dch(k); p_g_in(k)];
+                cost = cost + u'*obj.R_cost*u;
+            end
         end
 
         function constraints = computeConstraints(obj, x1, p_in, p_g_in, p_g_out, p_b_ch, p_b_dch, delta_b_ch, delta_b_dch, delta_g_in, delta_g_out)
@@ -90,7 +95,8 @@ classdef MPC_Controller < handle
 
             % power flow balance
             % p_in = p_g_out + p_b_ch + p_b_dch + p_g_in
-            constraints = [constraints, p_in == p_g_out + p_b_ch - p_b_dch + p_g_in];
+            constraints = [constraints, p_in == p_g_out + p_b_ch + p_b_dch + p_g_in];
+            disp('Power flow balance constraint added.');
 
 
             % battery dynamics
@@ -102,33 +108,64 @@ classdef MPC_Controller < handle
                 x_next = x(:,k) + obj.nu_ch*p_b_ch(k)*delta_t + (1/obj.nu_dch)*p_b_dch(k)*delta_t - obj.L_bat*x(:,k)*delta_t;
                 constraints = [constraints, minimal_battery_level <= x_next <= obj.E_bat];
                 x = [x, x_next];
+                
             end
+            disp('Battery dynamics constraints added.');
 
 
             % no charging and discharging at the same time
             constraints = [constraints, 0 <= p_b_ch <= obj.P_batconv_max*delta_b_ch];
             constraints = [constraints, -obj.P_batconv_max*delta_b_dch <= p_b_dch <= 0];
             constraints = [constraints, delta_b_ch + delta_b_dch <= 1];
+            disp('No simultaneous charge/discharge constraints added.');
 
             % no grid infeed and consumption at the same time
             constraints = [constraints, 0 <= p_g_out <= obj.P_gridcons_max*delta_g_out];
             constraints = [constraints, -obj.P_gridcons_max*delta_g_in <= p_g_in <= 0];
             constraints = [constraints, delta_g_in + delta_g_out <= 1];
+            disp('No simultaneous grid infeed/consumption constraints added.');
 
             % not allowed to decharge battery directly into grid outlet
             constraints = [constraints, delta_b_dch + delta_g_out <= 1];
+            disp('No direct battery to grid outlet constraint added.');
 
             % I one wants that it is not allowed to charge battery directly from grid - TODO: check if thats a good idea
             constraints = [constraints, delta_b_ch + delta_g_in <= 1];
-            
+            disp('No direct grid to battery charging constraint added.');
             
         end
-        
-        function output = computeControlAction(obj, current_battery_energy, pv_forecast, load_forecast)
-            % Führt die Optimierung aus und gibt den ersten Steuerinput zurück
+
+        function [p_b_ch_opt, p_b_dch_opt, p_g_in_opt, p_g_out_opt] = computeControlAction(obj, current_battery_energy, pv_forecast, load_forecast)
+            % Führt die Optimierung aus und gibt die optimalen Steuerinputs zurück
             p_in = pv_forecast - load_forecast;
-            u = obj.controller{current_battery_energy, p_in}; % jetzt übergebe ich noch alle fast alle optimization variabeln
-            output = u;
+            
+            % Debug-Informationen
+            disp(['Aktuelle Batterieenergie: ', num2str(current_battery_energy)]);
+            disp(['Min/Max p_in: ', num2str(min(p_in)), ' / ', num2str(max(p_in))]);
+            disp(['Batteriekapazität: ', num2str(obj.E_bat)]);
+            disp(['Minimaler Batterielevel: ', num2str((1-obj.DOD)*obj.E_bat)]);
+            
+            [u, diagnostics] = obj.controller{current_battery_energy, p_in}; 
+            
+            % Prüfe Solver-Status
+            if diagnostics ~= 0
+                disp(['Solver-Fehler! Diagnostics code: ', num2str(diagnostics)]);
+                if diagnostics == 1
+                    disp('Problem ist infeasible (keine zulässige Lösung)');
+                elseif diagnostics == 2
+                    disp('Problem ist unbounded');
+                elseif diagnostics == 3
+                    disp('Numerische Probleme');
+                else
+                    disp('Unbekannter Solver-Fehler');
+                end
+            end
+            
+            % Extrahiere die einzelnen Datenreihen aus dem cell array
+            p_b_ch_opt = u{1};   % Batterieladeleistung
+            p_b_dch_opt = u{2};  % Batterieentladeleistung  
+            p_g_in_opt = u{3};   % Netzbezugsleistung
+            p_g_out_opt = u{4};  % Netzeinspeiseleistung
         end
     end
 end
