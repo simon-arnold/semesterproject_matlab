@@ -10,7 +10,7 @@
 Dieses Projekt enthält:  
 
 - MATLAB-Funktionen (`src/`)
-- Simulink-Modelle (`models/`)
+- Simulink-Modelle (simulink_sims/`)
 - Beispiel-Daten (`data/`)
 - Tests (`tests/`)
 - Dokumentation (`docs/`)
