@@ -203,7 +203,6 @@ load_sim = dummy_load_extended(1:N_sim);
 plot(t_sim, load_sim, 'LineWidth', 2, 'Color', 'blue', 'DisplayName', 'Last');
 hold on;
 plot(t_sim, p_g_net_applied, 'LineWidth', 2, 'Color', [0.5 0 0.5], 'DisplayName', 'Grid-Net-Power');
-yline(0, 'k--', 'Alpha', 0.5, 'DisplayName', 'Nulllinie');
 xlabel('Zeit [h]');
 ylabel('Leistung [kW]');
 title('Last und Grid-Net-Power (pos=Einspeisung, neg=Bezug)');
