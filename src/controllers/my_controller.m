@@ -7,6 +7,8 @@ Ts = 15/60; % in hours (15 minutes)
 N_pred = 24/Ts; % Prediction horizon: 24 hours in time steps
 N_sim = 48/Ts; % Simulation time: 48 hours in time steps (2 days)
 
+plot_simple_controller = true;
+
 [dummy_pv_extended, dummy_load_extended, t_extended] = create_forecasts(N_pred, false);
 
 %% MPC Parameter
@@ -21,18 +23,17 @@ P_gridcons_max = 30;
 
 %% MPC Controller Initialization
 mpc = MPC_Controller(24, N_pred, Ts, R_cost, nu_ch, nu_dch, L_bat, E_bat, DOD, P_batconv_max, P_gridcons_max);
+simpleController = simple_controller(Ts, nu_ch, nu_dch, E_bat, DOD, P_batconv_max, P_gridcons_max);
 
-%%Simulation
 x_initial = 2.5; % Initial battery capacity in kWh (must be > 1.8 kWh)
 
-% Initialize storage arrays for simulation
 battery_energy_sim_MPC = zeros(1, N_sim+1);
 p_b_ch_applied_MPC = zeros(1, N_sim);
 p_b_dch_applied_MPC = zeros(1, N_sim);
 p_g_in_applied_MPC = zeros(1, N_sim);
 p_g_out_applied_MPC = zeros(1, N_sim);
 p_net_applied_MPC = zeros(1, N_sim);
-p_g_net_applied_MPC = zeros(1, N_sim);  % Net grid power calculated from energy balance
+p_g_net_applied_MPC = zeros(1, N_sim);  
 
 %for debugging
 p_g_in_optimizer_MPC = zeros(1, N_sim);
@@ -45,7 +46,7 @@ fprintf('Starting MPC Receding Horizon Simulation over %d time steps (%.1f hours
 for k = 1:N_sim
 
     if mod(k, 10) == 0 || k == 1 || k == N_sim
-        fprintf('Time step %d/%d (%.2f h) - %.1f%% complete\n', k, N_sim, (k-1)*Ts, k/N_sim*100);
+        fprintf('MPC: Time step %d/%d (%.2f h) - %.1f%% complete\n', k, N_sim, (k-1)*Ts, k/N_sim*100);
     end
     
     start_idx = k;
@@ -101,7 +102,46 @@ end
 fprintf('MPC Receding Horizon Simulation completed.\n\n');
 
 fprintf('Starting simple controller Simulation over %d time steps (%.1f hours)...\n', N_sim, N_sim*Ts);
+battery_energy_sim_simple = zeros(1, N_sim+1);
+p_b_ch_applied_simple = zeros(1, N_sim);
+p_b_dch_applied_simple = zeros(1, N_sim);
+p_g_in_applied_simple = zeros(1, N_sim);
+p_g_out_applied_simple = zeros(1, N_sim);
+p_net_applied_simple = zeros(1, N_sim);
+p_g_net_applied_simple = zeros(1, N_sim);  
 
+battery_energy_sim_simple(1) = x_initial;
+
+for k = 1:N_sim
+
+    if mod(k, 10) == 0 || k == 1 || k == N_sim
+        fprintf('Simple Controller: Time step %d/%d (%.2f h) - %.1f%% complete\n', k, N_sim, (k-1)*Ts, k/N_sim*100);
+    end
+    
+    [p_b_ch_simple, p_b_dch_simple] = ...
+        simpleController.computeControlAction(battery_energy_sim_simple(k), ...
+                                              dummy_pv_extended(k), ...
+                                              dummy_load_extended(k));
+    
+    p_b_ch_applied_simple(k) = p_b_ch_simple;
+    p_b_dch_applied_simple(k) = p_b_dch_simple;
+
+    p_net_applied_simple(k) = dummy_pv_extended(k) - dummy_load_extended(k);
+    p_g_net_applied_simple(k) = p_net_applied_simple(k) - p_b_ch_applied_simple(k) - p_b_dch_applied_simple(k);
+
+    p_g_in_applied_simple(k) = min(0, p_g_net_applied_simple(k));   % Negative = Consumption
+    p_g_out_applied_simple(k) = max(0, p_g_net_applied_simple(k));  % Positive = Feed-in
+
+    battery_energy_sim_simple(k+1) = battery_energy_sim_simple(k) + ...
+                              nu_ch * p_b_ch_applied_simple(k) * Ts + ...
+                              (1/nu_dch) * p_b_dch_applied_simple(k) * Ts - ...
+                              L_bat * battery_energy_sim_simple(k) * Ts;
+    
+    % fprintf('SOC = %.2f kWh, p_bat = %.2f kW\n', battery_energy_sim_MPC(k+1), ...
+    %         p_b_ch_applied_MPC(k) + p_b_dch_applied_MPC(k));
+    
+    
+end
 
 
 %% First optimization for comparison (entire horizon at once)
@@ -123,13 +163,20 @@ forecasts_struct = struct(...
     );
 
 results_struct = struct(...
-    'p_b_ch_applied', p_b_ch_applied_MPC, ...
-    'p_b_dch_applied', p_b_dch_applied_MPC, ...
-    'p_g_in_applied', p_g_in_applied_MPC, ...
-    'p_g_out_applied', p_g_out_applied_MPC, ...
-    'p_net_applied', p_net_applied_MPC, ...
-    'p_g_net_applied', p_g_net_applied_MPC, ...
-    'battery_energy_sim', battery_energy_sim_MPC ...
+    'p_b_ch_applied_MPC', p_b_ch_applied_MPC, ...
+    'p_b_dch_applied_MPC', p_b_dch_applied_MPC, ...
+    'p_g_in_applied_MPC', p_g_in_applied_MPC, ...
+    'p_g_out_applied_MPC', p_g_out_applied_MPC, ...
+    'p_net_applied_MPC', p_net_applied_MPC, ...
+    'p_g_net_applied_MPC', p_g_net_applied_MPC, ...
+    'battery_energy_sim_MPC', battery_energy_sim_MPC, ...
+    'p_b_ch_applied_simple', p_b_ch_applied_simple, ...
+    'p_b_dch_applied_simple', p_b_dch_applied_simple, ...
+    'p_g_in_applied_simple', p_g_in_applied_simple, ...
+    'p_g_out_applied_simple', p_g_out_applied_simple, ...
+    'p_net_applied_simple', p_net_applied_simple, ...
+    'p_g_net_applied_simple', p_g_net_applied_simple, ...
+    'battery_energy_sim_simple', battery_energy_sim_simple ...
 );
 
 model_parameters = struct(...
@@ -140,26 +187,8 @@ model_parameters = struct(...
 plot_options = struct(...
     'N_sim', N_sim, ...
     'N_pred', N_pred, ...
-    'Ts', Ts ...
+    'Ts', Ts, ...
+    'plot_simple_controller', plot_simple_controller ...
 );
 
 plot_controller_results(forecasts_struct, results_struct, model_parameters, plot_options);
-
-% Summary of results
-fprintf('\n=== MPC RECEDING HORIZON SIMULATION SUMMARY ===\n');
-fprintf('Simulation duration: %.1f hours (%d time steps of %.0f min)\n', N_sim*Ts, N_sim, Ts*60);
-fprintf('Prediction horizon: %.1f hours (%d time steps)\n', N_pred*Ts, N_pred);
-fprintf('Initial battery energy: %.2f kWh\n', battery_energy_sim_MPC(1));
-fprintf('Final battery energy: %.2f kWh\n', battery_energy_sim_MPC(end));
-fprintf('Minimum battery energy: %.2f kWh\n', min(battery_energy_sim_MPC));
-fprintf('Maximum battery energy: %.2f kWh\n', max(battery_energy_sim_MPC));
-fprintf('Total battery charging: %.2f kWh\n', sum(p_b_ch_applied_MPC) * Ts);
-fprintf('Total battery discharging: %.2f kWh\n', abs(sum(p_b_dch_applied_MPC)) * Ts);
-fprintf('Total grid consumption: %.2f kWh\n', abs(sum(p_g_in_applied_MPC)) * Ts);
-fprintf('Total grid feed-in: %.2f kWh\n', sum(p_g_out_applied_MPC) * Ts);
-fprintf('Grid-Net-Energy: %.2f kWh (pos=Feed-in, neg=Consumption)\n', sum(p_g_net_applied_MPC) * Ts);
-fprintf('Average Grid-Net-Power: %.3f kW\n', mean(p_g_net_applied_MPC));
-fprintf('Max grid feed-in: %.2f kW\n', max(p_g_net_applied_MPC));
-fprintf('Max grid consumption: %.2f kW\n', min(p_g_net_applied_MPC));
-fprintf('======================================================\n\n');
-
