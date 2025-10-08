@@ -2,7 +2,7 @@ function [pv_forecast, load_forecast, t] = create_forecasts(N_pred, take_dummy_f
 
 
     n_days_forecast = 3; 
-    plot_real_forecast = true;
+    plot_real_forecast = false;
 
     if take_dummy_forecasts
 
