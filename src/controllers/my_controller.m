@@ -1,4 +1,4 @@
-close all
+%close all
 clc
 clear
 
@@ -7,7 +7,7 @@ Ts = 15/60; % in hours (15 minutes)
 N_pred = 24/Ts; % Prediction horizon: 24 hours in time steps
 N_sim = 48/Ts; % Simulation time: 48 hours in time steps (2 days)
 
-[dummy_pv_extended, dummy_load_extended, t_extended] = create_forecasts(N_pred, false);
+[dummy_pv_extended, dummy_load_extended, t_extended] = create_forecasts(N_pred, true);
 
 %% MPC Parameter
 R_cost = diag([100, 100, 2000]); 

@@ -23,7 +23,7 @@ function [pv_forecast, load_forecast, t] = create_forecasts(N_pred, take_dummy_f
         % load real forecast from .mat file
         T_real = load('data/RAPT Dataset/matlab_datasets/dfA_300s_3months_7days_15min.mat');
         pv_forecast = T_real.T_filtered.A_exp_power(1:N_pred*n_days_forecast)'/1000; % convert W to kW
-        load_forecast = T_real.T_filtered.A_total_cons_power(1:N_pred*n_days_forecast)'/1000; % convert W to kW
+        load_forecast = T_real.T_filtered.A_total_cons_power_min_sauna(1:N_pred*n_days_forecast)'/1000; % convert W to kW
         t = linspace(0, 24*n_days_forecast, length(pv_forecast));
 
         if plot_real_forecast

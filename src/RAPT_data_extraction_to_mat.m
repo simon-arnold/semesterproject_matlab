@@ -16,10 +16,12 @@ time_dt.TimeZone = 'Europe/Zurich';
 %% Shift start time  + filter 7 days
 
 originalStart = time_dt(1);
-n_month_shift = 12;
-startTime = originalStart + calmonths(n_month_shift) + days(1); % To set start date of plot to monday
+n_month_shift = 6;
+startTime = originalStart + calmonths(n_month_shift) + days(1)+days(2*7); % To set start date of plot to monday
 % Either dataset D: startTime = originalStart + calmonths(6); 
-% Dataset A: startTime = originalStart + calmonths(12) + days(1); % To set start date of plot to monday
+% Dataset A: startTime = originalStart + calmonths(12) + days(1); % For a good April week
+%          : startTime = originalStart + calmonths(n_month_shift) + days(1)+days(2*7); % for a not so noisy october week
+%          : startTime = originalStart + calmonths(n_month_shift) + days(1)+days(3*7); % for a more noisy october week
 endTime = startTime + days(7);
 idx = (time_dt >= startTime) & (time_dt <= endTime);
 timeFiltered = time_dt(idx);
@@ -84,7 +86,7 @@ grid on;
 % Create filtered table for .mat file - only store A_total_cons_power & A_exp_power with time
 T_filtered = table();
 T_filtered.Time = T15.Time;
-T_filtered.A_total_cons_power = T15.A_total_cons_power;
+T_filtered.A_total_cons_power_min_sauna = T15.A_total_cons_power - T15.A_sauna_power;
 T_filtered.A_exp_power = T15.A_exp_power;
 
 % Save to .mat file - only store the filtered data
@@ -95,9 +97,11 @@ fprintf('Filtered data saved (A_total_cons_power & A_exp_power only).\n');
 
 % Plot filtered data
 figure;
-plot(T_filtered.Time, T_filtered.A_total_cons_power, 'LineWidth', 2, 'DisplayName', 'Total Consumption Power');
+plot(T15.Time, T15.A_total_cons_power - T15.A_sauna_power, 'LineWidth', 2, 'DisplayName', 'Total Power minus Sauna');
 hold on;
-plot(T_filtered.Time, T_filtered.A_exp_power, 'LineWidth', 2, 'DisplayName', 'Export Power');
+plot(T15.Time, T15.A_total_cons_power, 'LineWidth', 2, 'DisplayName', 'Total Consumption Power');
+hold on;
+plot(T15.Time, T15.A_exp_power, 'LineWidth', 2, 'DisplayName', 'Export Power');
 xlabel('Time');
 ylabel('Power [kW]');
 title('Filtered RAPT Data: Consumption vs Export Power');
