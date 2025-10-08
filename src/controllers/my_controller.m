@@ -34,6 +34,10 @@ p_g_out_applied_MPC = zeros(1, N_sim);
 p_net_applied_MPC = zeros(1, N_sim);
 p_g_net_applied_MPC = zeros(1, N_sim);  % Net grid power calculated from energy balance
 
+%for debugging
+p_g_in_optimizer_MPC = zeros(1, N_sim);
+p_g_out_optimizer_MPC = zeros(1, N_sim);
+
 battery_energy_sim_MPC(1) = x_initial;
 
 fprintf('Starting MPC Receding Horizon Simulation over %d time steps (%.1f hours)...\n', N_sim, N_sim*Ts);
@@ -74,10 +78,14 @@ for k = 1:N_sim
     
     p_b_ch_applied_MPC(k) = p_b_ch_opt(1);
     p_b_dch_applied_MPC(k) = p_b_dch_opt(1);
-    p_g_in_applied_MPC(k) = p_g_in_opt(1);
-    p_g_out_applied_MPC(k) = p_g_out_opt(1);
+    p_g_in_optimizer_MPC(k) = p_g_in_opt(1);
+    p_g_out_optimizer_MPC(k) = p_g_out_opt(1);
 
     p_net_applied_MPC(k) = pv_forecast_window(1) - load_forecast_window(1);
+    p_g_net_applied_MPC(k) = p_net_applied_MPC(k) - p_b_ch_applied_MPC(k) - p_b_dch_applied_MPC(k);
+
+    p_g_in_applied_MPC(k) = min(0, p_g_net_applied_MPC(k));   % Negative = Consumption
+    p_g_out_applied_MPC(k) = max(0, p_g_net_applied_MPC(k));  % Positive = Feed-in
 
     battery_energy_sim_MPC(k+1) = battery_energy_sim_MPC(k) + ...
                               nu_ch * p_b_ch_applied_MPC(k) * Ts + ...
@@ -94,28 +102,7 @@ fprintf('MPC Receding Horizon Simulation completed.\n\n');
 
 fprintf('Starting simple controller Simulation over %d time steps (%.1f hours)...\n', N_sim, N_sim*Ts);
 
-%% Calculate actual grid powers from energy balance
-% Calculate p_g_net based on energy balance: p_g_net = p_in - p_b_ch - p_b_dch
-% Positive values = Grid feed-in, Negative values = Grid consumption
-p_g_out_energy_balance_MPC = zeros(1, N_sim);
-p_g_in_energy_balance_MPC = zeros(1, N_sim);
 
-for k = 1:N_sim
-    % Grid net power from energy balance (overwrites the preallocated array)
-    p_g_net_applied_MPC(k) = p_net_applied_MPC(k) - p_b_ch_applied_MPC(k) - p_b_dch_applied_MPC(k);
-    
-    p_g_out_energy_balance_MPC(k) = max(0, p_g_net_applied_MPC(k));  % Positive = Feed-in
-    p_g_in_energy_balance_MPC(k) = min(0, p_g_net_applied_MPC(k));   % Negative = Consumption
-end
-
-% fprintf('=== GRID-POWER COMPARISON ===\n');
-% fprintf('Optimizer vs. Energy Balance for first 5 time steps:\n');
-% for i = 1:5
-%     fprintf('t=%d: Optimizer[in=%.3f, out=%.3f] vs. Energy Balance[net=%.3f, in=%.3f, out=%.3f]\n', ...
-%         i, p_g_in_applied_MPC(i), p_g_out_applied_MPC(i), p_g_net_applied_MPC(i), ...
-%         p_g_in_energy_balance_MPC(i), p_g_out_energy_balance_MPC(i));
-% end
-% fprintf('============================\n\n');
 
 %% First optimization for comparison (entire horizon at once)
 fprintf('Performing comparison optimization over entire horizon for checking if managed to solve the problem\n');
@@ -142,8 +129,6 @@ results_struct = struct(...
     'p_g_out_applied', p_g_out_applied_MPC, ...
     'p_net_applied', p_net_applied_MPC, ...
     'p_g_net_applied', p_g_net_applied_MPC, ...
-    'p_g_in_energy_balance', p_g_in_energy_balance_MPC, ...
-    'p_g_out_energy_balance', p_g_out_energy_balance_MPC, ...
     'battery_energy_sim', battery_energy_sim_MPC ...
 );
 
@@ -170,8 +155,8 @@ fprintf('Minimum battery energy: %.2f kWh\n', min(battery_energy_sim_MPC));
 fprintf('Maximum battery energy: %.2f kWh\n', max(battery_energy_sim_MPC));
 fprintf('Total battery charging: %.2f kWh\n', sum(p_b_ch_applied_MPC) * Ts);
 fprintf('Total battery discharging: %.2f kWh\n', abs(sum(p_b_dch_applied_MPC)) * Ts);
-fprintf('Total grid consumption (Energy Balance): %.2f kWh\n', abs(sum(p_g_in_energy_balance_MPC)) * Ts);
-fprintf('Total grid feed-in (Energy Balance): %.2f kWh\n', sum(p_g_out_energy_balance_MPC) * Ts);
+fprintf('Total grid consumption: %.2f kWh\n', abs(sum(p_g_in_applied_MPC)) * Ts);
+fprintf('Total grid feed-in: %.2f kWh\n', sum(p_g_out_applied_MPC) * Ts);
 fprintf('Grid-Net-Energy: %.2f kWh (pos=Feed-in, neg=Consumption)\n', sum(p_g_net_applied_MPC) * Ts);
 fprintf('Average Grid-Net-Power: %.3f kW\n', mean(p_g_net_applied_MPC));
 fprintf('Max grid feed-in: %.2f kW\n', max(p_g_net_applied_MPC));
