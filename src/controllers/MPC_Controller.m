@@ -140,10 +140,10 @@ classdef MPC_Controller < handle
             p_in = pv_forecast - load_forecast;
             
             % Debug-Informationen
-            disp(['Aktuelle Batterieenergie: ', num2str(current_battery_energy)]);
-            disp(['Min/Max p_in: ', num2str(min(p_in)), ' / ', num2str(max(p_in))]);
-            disp(['Batteriekapazität: ', num2str(obj.E_bat)]);
-            disp(['Minimaler Batterielevel: ', num2str((1-obj.DOD)*obj.E_bat)]);
+            % disp(['Aktuelle Batterieenergie: ', num2str(current_battery_energy)]);
+            % disp(['Min/Max p_in: ', num2str(min(p_in)), ' / ', num2str(max(p_in))]);
+            % disp(['Batteriekapazität: ', num2str(obj.E_bat)]);
+            % disp(['Minimaler Batterielevel: ', num2str((1-obj.DOD)*obj.E_bat)]);
             
             [u, diagnostics] = obj.controller{current_battery_energy, p_in}; 
             

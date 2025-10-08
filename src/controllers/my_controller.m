@@ -23,7 +23,7 @@ P_gridcons_max = 30;
 mpc = MPC_Controller(24, N_pred, Ts, R_cost, nu_ch, nu_dch, L_bat, E_bat, DOD, P_batconv_max, P_gridcons_max);
 
 %% Receding Horizon Simulation
-x_current = 2.5; % Initial battery capacity in kWh (must be > 1.8 kWh)
+x_initial = 2.5; % Initial battery capacity in kWh (must be > 1.8 kWh)
 
 % Initialize storage arrays for simulation
 battery_energy_sim = zeros(1, N_sim+1);
@@ -34,21 +34,22 @@ p_g_out_applied = zeros(1, N_sim);
 p_net_applied = zeros(1, N_sim);
 p_g_net_applied = zeros(1, N_sim);  % Net grid power calculated from energy balance
 
-battery_energy_sim(1) = x_current;
+battery_energy_sim(1) = x_initial;
 
 fprintf('Starting Receding Horizon Simulation over %d time steps (%.1f hours)...\n', N_sim, N_sim*Ts);
 
 for k = 1:N_sim
-    % Current time step
-    fprintf('Time step %d/%d (%.2f h): ', k, N_sim, (k-1)*Ts);
+
+    if mod(k, 10) == 0 || k == 1 || k == N_sim
+        fprintf('Time step %d/%d (%.2f h) - %.1f%% complete\n', k, N_sim, (k-1)*Ts, k/N_sim*100);
+    end
     
-    % Extract prediction window for current time step
     start_idx = k;
     end_idx = k + N_pred - 1;
     
     % Check if enough forecast data is available
     if end_idx > length(dummy_pv_extended)
-        fprintf('Warning: Not enough forecast data! Using available data.\n');
+        fprintf('Warning: Not enough forecast data! Using available data.');
         end_idx = length(dummy_pv_extended);
         current_N_pred = end_idx - start_idx + 1;
         
@@ -71,23 +72,22 @@ for k = 1:N_sim
     [p_b_ch_opt, p_b_dch_opt, p_g_in_opt, p_g_out_opt] = ...
         mpc.computeControlAction(battery_energy_sim(k), pv_forecast_window, load_forecast_window);
     
-    % Apply only the first control command (Receding Horizon principle)
     p_b_ch_applied(k) = p_b_ch_opt(1);
     p_b_dch_applied(k) = p_b_dch_opt(1);
     p_g_in_applied(k) = p_g_in_opt(1);
     p_g_out_applied(k) = p_g_out_opt(1);
     
-    % Calculate net power
     p_net_applied(k) = pv_forecast_window(1) - load_forecast_window(1);
     
-    % Update battery state for next time step
     battery_energy_sim(k+1) = battery_energy_sim(k) + ...
                               nu_ch * p_b_ch_applied(k) * Ts + ...
                               (1/nu_dch) * p_b_dch_applied(k) * Ts - ...
                               L_bat * battery_energy_sim(k) * Ts;
     
-    fprintf('SOC = %.2f kWh, p_bat = %.2f kW\n', battery_energy_sim(k+1), ...
-            p_b_ch_applied(k) + p_b_dch_applied(k));
+    % fprintf('SOC = %.2f kWh, p_bat = %.2f kW\n', battery_energy_sim(k+1), ...
+    %         p_b_ch_applied(k) + p_b_dch_applied(k));
+    
+    
 end
 
 fprintf('Receding Horizon Simulation completed.\n\n');
@@ -102,24 +102,23 @@ for k = 1:N_sim
     % Grid net power from energy balance (overwrites the preallocated array)
     p_g_net_applied(k) = p_net_applied(k) - p_b_ch_applied(k) - p_b_dch_applied(k);
     
-    % Split into feed-in and consumption
     p_g_out_energy_balance(k) = max(0, p_g_net_applied(k));  % Positive = Feed-in
     p_g_in_energy_balance(k) = min(0, p_g_net_applied(k));   % Negative = Consumption
 end
 
-fprintf('=== GRID-POWER COMPARISON ===\n');
-fprintf('Optimizer vs. Energy Balance for first 5 time steps:\n');
-for i = 1:5
-    fprintf('t=%d: Optimizer[in=%.3f, out=%.3f] vs. Energy Balance[net=%.3f, in=%.3f, out=%.3f]\n', ...
-        i, p_g_in_applied(i), p_g_out_applied(i), p_g_net_applied(i), ...
-        p_g_in_energy_balance(i), p_g_out_energy_balance(i));
-end
-fprintf('============================\n\n');
+% fprintf('=== GRID-POWER COMPARISON ===\n');
+% fprintf('Optimizer vs. Energy Balance for first 5 time steps:\n');
+% for i = 1:5
+%     fprintf('t=%d: Optimizer[in=%.3f, out=%.3f] vs. Energy Balance[net=%.3f, in=%.3f, out=%.3f]\n', ...
+%         i, p_g_in_applied(i), p_g_out_applied(i), p_g_net_applied(i), ...
+%         p_g_in_energy_balance(i), p_g_out_energy_balance(i));
+% end
+% fprintf('============================\n\n');
 
 %% First optimization for comparison (entire horizon at once)
 fprintf('Performing comparison optimization over entire horizon...\n');
 [p_b_ch_opt_full, p_b_dch_opt_full, p_g_in_opt_full, p_g_out_opt_full] = ...
-    mpc.computeControlAction(x_current, dummy_pv_extended(1:N_pred), dummy_load_extended(1:N_pred));
+    mpc.computeControlAction(x_initial, dummy_pv_extended(1:N_pred), dummy_load_extended(1:N_pred));
 
 disp('First 5 optimal values (full horizon):');
 disp('Battery charging power:');
@@ -187,7 +186,7 @@ fprintf('Example for first time step:\n');
 
 % Show first time step of full horizon optimization
 [p_b_ch_demo, p_b_dch_demo, p_g_in_opt_demo, p_g_out_opt_demo] = ...
-    mpc.computeControlAction(x_current, dummy_pv_extended(1:N_pred), dummy_load_extended(1:N_pred));
+    mpc.computeControlAction(x_initial, dummy_pv_extended(1:N_pred), dummy_load_extended(1:N_pred));
 
 % Calculate grid powers manually from energy balance
 p_in_demo = dummy_pv_extended(1) - dummy_load_extended(1);
