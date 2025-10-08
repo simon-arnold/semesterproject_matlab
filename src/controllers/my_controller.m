@@ -22,7 +22,7 @@ P_gridcons_max = 30;
 %% MPC Controller Initialization
 mpc = MPC_Controller(24, N_pred, Ts, R_cost, nu_ch, nu_dch, L_bat, E_bat, DOD, P_batconv_max, P_gridcons_max);
 
-%% Receding Horizon Simulation
+%%Simulation
 x_initial = 2.5; % Initial battery capacity in kWh (must be > 1.8 kWh)
 
 % Initialize storage arrays for simulation
@@ -36,7 +36,7 @@ p_g_net_applied_MPC = zeros(1, N_sim);  % Net grid power calculated from energy 
 
 battery_energy_sim_MPC(1) = x_initial;
 
-fprintf('Starting Receding Horizon Simulation over %d time steps (%.1f hours)...\n', N_sim, N_sim*Ts);
+fprintf('Starting MPC Receding Horizon Simulation over %d time steps (%.1f hours)...\n', N_sim, N_sim*Ts);
 
 for k = 1:N_sim
 
@@ -90,7 +90,9 @@ for k = 1:N_sim
     
 end
 
-fprintf('Receding Horizon Simulation completed.\n\n');
+fprintf('MPC Receding Horizon Simulation completed.\n\n');
+
+fprintf('Starting simple controller Simulation over %d time steps (%.1f hours)...\n', N_sim, N_sim*Ts);
 
 %% Calculate actual grid powers from energy balance
 % Calculate p_g_net based on energy balance: p_g_net = p_in - p_b_ch - p_b_dch
