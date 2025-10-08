@@ -72,6 +72,7 @@ function plot_controller_results(forecasts, results, model_parameters, options )
     plot((0:options.N_sim)*options.Ts, results.battery_energy_sim_MPC/model_parameters.E_bat, 'LineWidth', 2, 'Color', 'y');
     hold on;
     yline((1-model_parameters.DOD), '--r', 'LineWidth', 1.5, 'DisplayName', 'Min SOC');
+    yline(1.0, '--g', 'LineWidth', 1.5, 'DisplayName', 'Max SOC');
     xlabel('Time [h]');
     ylabel('[%]');
     title('Battery Energy Evolution (State of Charge)');
@@ -216,6 +217,7 @@ function plot_controller_results(forecasts, results, model_parameters, options )
     plot((0:options.N_sim)*options.Ts, results.battery_energy_sim_MPC/model_parameters.E_bat, 'LineWidth', 2, 'Color', 'y');
     hold on;
     yline((1-model_parameters.DOD), '--r', 'LineWidth', 1.5, 'DisplayName', 'Min SOC');
+    yline(1.0, '--g', 'LineWidth', 1.5, 'DisplayName', 'Max SOC');
     xlabel('Time [h]');
     ylabel('[%]');
     title('Battery Energy Evolution (State of Charge)');
@@ -273,6 +275,7 @@ function plot_controller_results(forecasts, results, model_parameters, options )
         plot((0:options.N_sim)*options.Ts, results.battery_energy_sim_simple/model_parameters.E_bat, 'LineWidth', 2, 'Color', 'y');
         hold on;
         yline((1-model_parameters.DOD), '--r', 'LineWidth', 1.5, 'DisplayName', 'Min SOC');
+        yline(1.0, '--g', 'LineWidth', 1.5, 'DisplayName', 'Max SOC');
         xlabel('Time [h]');
         ylabel('[%]');
         title('Battery Energy Evolution (State of Charge)');
@@ -323,6 +326,7 @@ function plot_controller_results(forecasts, results, model_parameters, options )
         plot((0:options.N_sim)*options.Ts, results.battery_energy_sim_simple/model_parameters.E_bat, 'LineWidth', 2, 'Color', 'y');
         hold on;
         yline((1-model_parameters.DOD), '--r', 'LineWidth', 1.5, 'DisplayName', 'Min SOC');
+        yline(1.0, '--g', 'LineWidth', 1.5, 'DisplayName', 'Max SOC');
         xlabel('Time [h]');
         ylabel('[%]');
         title('Battery Energy Evolution (State of Charge)');
