@@ -13,18 +13,23 @@ plot_simple_controller = true;
 
 %% MPC Parameter
 R_cost = diag([100, 100, 2000]); 
-nu_ch = 0.85;
-nu_dch = 0.95;
+nu_ch = 0.93;
+nu_dch = nu_ch;
 L_bat = 0;
 E_bat = 3;
-DOD = 0.4;
-P_batconv_max = 1.8;
+DOD = 0.8;
+P_batconv_max = 1.530;
 P_gridcons_max = 30;
 
 noise_options = struct(...
-    'apply_noise', true, ...
+    'apply_noise', false, ...
     'pv_std', 0.3, ...    
     'load_std', 0.7 ...   
+);
+
+peakshaving_metrics_options = struct(...
+    'p_ref', 1.5 ,... % in kW
+    'plot_peakshaving_metrics', true ... % in kW
 );
 
 %% MPC Controller Initialization
@@ -206,3 +211,4 @@ plot_options = struct(...
 );
 
 plot_controller_results(forecasts_struct, results_struct, model_parameters, plot_options);
+calculate_peakshaving_metrics(p_g_net_applied_MPC, p_g_net_applied_simple, peakshaving_metrics_options);
