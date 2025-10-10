@@ -5,8 +5,17 @@ function [pv_forecast_noise,load_forecast_noise] = add_forecast_noise(pv_forecas
     pv_forecast_noise(1) = pv_forecast(1);
     load_forecast_noise(1) = load_forecast(1);
 
-    pv_forecast_noise = [ pv_forecast_noise, max(0, pv_forecast(2:end) + normrnd(0, noise_options.pv_std, size(pv_forecast(2:end))))];
-    load_forecast_noise = [ load_forecast_noise, max(0, load_forecast(2:end) + normrnd(0, noise_options.load_std, size(load_forecast(2:end))))];
+
+    if noise_options.growing_over_time
+        % Standard deviation grows over one prediction horizon until it reaches the maximum in the end
+        growth_factor = linspace(0, 1, N_pred-1);
+        pv_forecast_noise = [ pv_forecast_noise, max(0, pv_forecast(2:end) + normrnd(0, noise_options.pv_std * growth_factor, size(pv_forecast(2:end))))];
+        load_forecast_noise = [ load_forecast_noise, max(0, load_forecast(2:end) + normrnd(0, noise_options.load_std * growth_factor, size(load_forecast(2:end))))];
+    else
+        pv_forecast_noise = [ pv_forecast_noise, max(0, pv_forecast(2:end) + normrnd(0, noise_options.pv_std, size(pv_forecast(2:end))))];
+        load_forecast_noise = [ load_forecast_noise, max(0, load_forecast(2:end) + normrnd(0, noise_options.load_std, size(load_forecast(2:end))))];
+    end
+    
 
     if plot_forecasts_with_noise && k_sim == 1
         figure;
