@@ -22,8 +22,8 @@ function [metrics_MPC, metrics_baseline] = calculate_peakshaving_metrics(p_grid_
         hold on;
         plot(p_grid_net_MPC, 'LineWidth', 1.5);
         plot(p_grid_net_baseline, 'LineWidth', 1.5);
-        yline(p_ref, 'r--', 'p_{ref}', 'LabelHorizontalAlignment', 'left', 'LabelVerticalAlignment', 'middle', 'FontSize', 12);
-        yline(-p_ref, 'r--', '-p_{ref}', 'LabelHorizontalAlignment', 'left', 'LabelVerticalAlignment', 'middle', 'FontSize', 12);
+        yline(p_ref, 'k--', 'p_{ref}', 'LineWidth', 2, 'LabelHorizontalAlignment', 'left', 'LabelVerticalAlignment', 'middle', 'FontSize', 12);
+        yline(-p_ref, 'k--', '-p_{ref}', 'LineWidth', 2, 'LabelHorizontalAlignment', 'left', 'LabelVerticalAlignment', 'middle', 'FontSize', 12);
         xlabel('Time step');
         ylabel('Grid power (kW)');
         title('Grid Power with MPC vs Baseline');
