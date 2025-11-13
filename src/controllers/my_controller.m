@@ -9,17 +9,43 @@ N_sim = 48/Ts; % Simulation time: 48 hours in time steps (2 days)
 
 plot_simple_controller = true;
 
-[dummy_pv_extended, dummy_load_extended, t_extended] = create_forecasts(N_pred, false);
+[pv_forecast, load_forecast, t_extended] = create_forecasts(N_pred, false);
 
 %% MPC Parameter
 R_cost = diag([100, 100, 2000]); 
-nu_ch = 0.85;
-nu_dch = 0.95;
+nu_ch = 0.93;
+nu_dch = nu_ch;
 L_bat = 0;
 E_bat = 3;
-DOD = 0.4;
-P_batconv_max = 1.8;
+DOD = 0.8;
+P_batconv_max = 1.530;
 P_gridcons_max = 30;
+
+noise_options = struct(...
+    'apply_noise', true, ...
+    'growing_over_time', true, ...
+    'pv_std', 3.5, ...    
+    'load_std', 6.5 ...   
+);
+
+    % 'growing_over_time', false, ...
+    % 'pv_std', 0.2, ...    
+    % 'load_std', 0.7 ...   
+
+    % 'growing_over_time', true, ...
+    % 'pv_std', 1.3, ...    
+    % 'load_std', 3 ...   
+
+    % Für wirklich starke noise
+    % 'growing_over_time', true, ...
+    % 'pv_std', 3.5, ...    
+    % 'load_std', 6.5 ...   
+
+
+peakshaving_metrics_options = struct(...
+    'p_ref', 1.5 ,... % in kW
+    'plot_peakshaving_metrics', true ... % in kW
+);
 
 %% MPC Controller Initialization
 mpc = MPC_Controller(24, N_pred, Ts, R_cost, nu_ch, nu_dch, L_bat, E_bat, DOD, P_batconv_max, P_gridcons_max);
@@ -53,13 +79,13 @@ for k = 1:N_sim
     end_idx = k + N_pred - 1;
     
     % Check if enough forecast data is available
-    if end_idx > length(dummy_pv_extended)
+    if end_idx > length(pv_forecast)
         fprintf('Warning: Not enough forecast data! Using available data.');
-        end_idx = length(dummy_pv_extended);
+        end_idx = length(pv_forecast);
         current_N_pred = end_idx - start_idx + 1;
         
-        pv_forecast_window = dummy_pv_extended(start_idx:end_idx);
-        load_forecast_window = dummy_load_extended(start_idx:end_idx);
+        pv_forecast_window = pv_forecast(start_idx:end_idx);
+        load_forecast_window = load_forecast(start_idx:end_idx);
         
         % Fill missing data with last available values
         if current_N_pred < N_pred
@@ -69,14 +95,22 @@ for k = 1:N_sim
                                     repmat(load_forecast_window(end), 1, N_pred - current_N_pred)];
         end
     else
-        pv_forecast_window = dummy_pv_extended(start_idx:end_idx);
-        load_forecast_window = dummy_load_extended(start_idx:end_idx);
+        pv_forecast_window = pv_forecast(start_idx:end_idx);
+        load_forecast_window = load_forecast(start_idx:end_idx);
     end
+
+    if noise_options.apply_noise
+
+        [pv_forecast_window_noise, load_forecast_window_noise] = add_forecast_noise(pv_forecast_window, load_forecast_window, k, N_pred, Ts, noise_options);
+        [p_b_ch_opt, p_b_dch_opt, p_g_in_opt, p_g_out_opt] = ...
+            mpc.computeControlAction(battery_energy_sim_MPC(k), pv_forecast_window_noise, load_forecast_window_noise);
     
-    % Perform MPC optimization
-    [p_b_ch_opt, p_b_dch_opt, p_g_in_opt, p_g_out_opt] = ...
-        mpc.computeControlAction(battery_energy_sim_MPC(k), pv_forecast_window, load_forecast_window);
-    
+    else
+        
+        [p_b_ch_opt, p_b_dch_opt, p_g_in_opt, p_g_out_opt] = ...
+            mpc.computeControlAction(battery_energy_sim_MPC(k), pv_forecast_window, load_forecast_window);
+    end
+
     p_b_ch_applied_MPC(k) = p_b_ch_opt(1);
     p_b_dch_applied_MPC(k) = p_b_dch_opt(1);
     p_g_in_optimizer_MPC(k) = p_g_in_opt(1);
@@ -120,13 +154,13 @@ for k = 1:N_sim
     
     [p_b_ch_simple, p_b_dch_simple] = ...
         simpleController.computeControlAction(battery_energy_sim_simple(k), ...
-                                              dummy_pv_extended(k), ...
-                                              dummy_load_extended(k));
+                                              pv_forecast(k), ...
+                                              load_forecast(k));
     
     p_b_ch_applied_simple(k) = p_b_ch_simple;
     p_b_dch_applied_simple(k) = p_b_dch_simple;
 
-    p_net_applied_simple(k) = dummy_pv_extended(k) - dummy_load_extended(k);
+    p_net_applied_simple(k) = pv_forecast(k) - load_forecast(k);
     p_g_net_applied_simple(k) = p_net_applied_simple(k) - p_b_ch_applied_simple(k) - p_b_dch_applied_simple(k);
 
     p_g_in_applied_simple(k) = min(0, p_g_net_applied_simple(k));   % Negative = Consumption
@@ -147,7 +181,7 @@ end
 %% First optimization for comparison (entire horizon at once)
 fprintf('Performing comparison optimization over entire horizon for checking if managed to solve the problem\n');
 [p_b_ch_opt_full, p_b_dch_opt_full, p_g_in_opt_full, p_g_out_opt_full] = ...
-    mpc.computeControlAction(x_initial, dummy_pv_extended(1:N_pred), dummy_load_extended(1:N_pred));
+    mpc.computeControlAction(x_initial, pv_forecast(1:N_pred), load_forecast(1:N_pred));
 
 disp('Battery charging power:');
 disp(p_b_ch_opt_full(1:5));
@@ -157,8 +191,8 @@ disp('Grid consumption power:');
 disp(p_g_in_opt_full(1:5));
 
 forecasts_struct = struct(...
-    'pv', dummy_pv_extended, ...
-    'load', dummy_load_extended, ...
+    'pv', pv_forecast, ...
+    'load', load_forecast, ...
     't', t_extended ...
     );
 
@@ -192,3 +226,4 @@ plot_options = struct(...
 );
 
 plot_controller_results(forecasts_struct, results_struct, model_parameters, plot_options);
+calculate_peakshaving_metrics(p_g_net_applied_MPC, p_g_net_applied_simple, peakshaving_metrics_options);
