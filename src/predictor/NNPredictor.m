@@ -27,61 +27,99 @@ classdef NNPredictor < handle
     
     properties (Constant)
         FEATURE_ORDER = {'Year', 'tod_sin', 'tod_cos', 'weekday_sin', ...
-                        'weekday_cos', 'doy_sin', 'doy_cos', 'Load'};
+                        'weekday_cos', 'doy_sin', 'doy_cos', 'Load', 'Temperature'};
         DEFAULT_INPUT_LENGTH = 2 * 24 * 4;  % 2 Tage * 24 Stunden * 4 (15-min Intervalle)
     end
     
     methods
-        function obj = NNPredictor(prediction_horizon, feature_names_to_normalize, min_vals, max_vals)
+        function obj = NNPredictor(prediction_horizon)
             % Konstruktor für NNPredictor
             %
             % Eingaben:
-            %   prediction_horizon - Vorhersagehorizont (16, 24, 32, oder 48)
-            %   feature_names_to_normalize - Cell Array mit Namen der zu normalisierenden Features
-            %   min_vals - Struct mit Minimum-Werten für jedes Feature
-            %   max_vals - Struct mit Maximum-Werten für jedes Feature
+            %   prediction_horizon - Vorhersagehorizont (16, 24, 32 oder 48)
             %
-            % Beispiel:
-            %   feature_names = {'Year', 'Load'};
-            %   min_vals = struct('Year', 2023, 'Load', 0);
-            %   max_vals = struct('Year', 2024, 'Load', 100);
-            %   predictor = NNPredictor(16, feature_names, min_vals, max_vals);
-            
+            % Hinweis:
+            %   Die Normalisierungsparameter (Min/Max) und die Liste der
+            %   zu skalierenden Features werden nicht mehr als Argumente
+            %   übergeben, sondern aus der Datei
+            %   `data\RAPT Dataset\matlab_datasets\min_max_scaler_params.mat`
+            %   geladen. Erwartete Variablen in der MAT-Datei: `Min_Vals`,
+            %   `Max_Vals`, `Scaled_Feature_Names`.
+
             valid_horizons = [16, 24, 32, 48];
             if ~ismember(prediction_horizon, valid_horizons)
                 error('NNPredictor:InvalidHorizon', ...
                     'prediction_horizon muss 16, 24, 32 oder 48 sein. Erhalten: %d', prediction_horizon);
             end
-            
+
             obj.prediction_horizon = prediction_horizon;
-            obj.feature_names_to_normalize = feature_names_to_normalize;
-            obj.min_vals = min_vals;
-            obj.max_vals = max_vals;
             obj.input_seq_len = obj.DEFAULT_INPUT_LENGTH;
-            
-            
+
+            % Lade Min/Max-Parameter und die Feature-Liste aus Datei
+            obj.loadScalerParams();
+
+            % Lade das ONNX Modell
             obj.loadModel();
         end
         
         function loadModel(obj)
-                      
-            model_path = fullfile('predictor', 'models', 'house_E', ...
-                sprintf('hor_%d', obj.prediction_horizon), 'cnn_lstm_forecaster.onnx');
-            
+            model_path = fullfile('predictor','models','house_E', sprintf('hor_%d', obj.prediction_horizon), 'cnn_lstm_forecaster.onnx');
             if ~isfile(model_path)
-                error('NNPredictor:ModelNotFound', ...
-                    'ONNX Modell nicht gefunden: %s', model_path);
+                error('NNPredictor:ModelNotFound', 'ONNX Modell nicht gefunden: %s', model_path);
             end
-            
 
-            try
-                obj.net = importONNXNetwork(model_path, 'OutputLayerType', 'regression');
-                fprintf('ONNX Modell erfolgreich geladen: %s\n', model_path);
-            catch ME
-                error('NNPredictor:LoadError', ...
-                    'Fehler beim Laden des ONNX Modells: %s\nFehlermeldung: %s', ...
-                    model_path, ME.message);
+            % Einfache, eindeutige Implementierung: benutze importONNXNetwork
+            if exist('importONNXNetwork','file') == 2
+                try
+                    % Versuche zuerst als dlnetwork, sonst Standardnetz
+                    try
+                        obj.net = importONNXNetwork(model_path, 'OutputLayerType', 'regression', 'TargetNetwork', 'dlnetwork');
+                    catch
+                        obj.net = importONNXNetwork(model_path, 'OutputLayerType', 'regression');
+                    end
+                    fprintf('ONNX Modell erfolgreich geladen (importONNXNetwork): %s\n', model_path);
+                    return;
+                catch ME
+                    error('NNPredictor:ImportFailed', 'Fehler beim Laden des ONNX Modells: %s\nFehlermeldung: %s', model_path, ME.message);
+                end
+            else
+                error('NNPredictor:MissingImport', ['Die Funktion importONNXNetwork ist nicht verfügbar. ', ...
+                    'Installiere das Support‑Paket "Deep Learning Toolbox Converter for ONNX Model Format" oder verwende eine MATLAB-Version mit ONNX-Unterstützung.']);
             end
+        end
+
+        function loadScalerParams(obj)
+            % Lädt Min/Max-Scaler-Parameter aus MAT-Datei (vereinfachte, klare Logik)
+            scaler_path = fullfile('data', 'RAPT Dataset', 'matlab_datasets', 'min_max_scaler_params.mat');
+
+            scaler_mat_file = load(scaler_path);
+
+            disp("scaler_mat_files:")
+            disp(scaler_mat_file);
+
+      
+
+            obj.feature_names_to_normalize = scaler_mat_file.Scaled_Features_Names;
+            obj.min_vals = struct();
+            obj.max_vals = struct();
+
+            num_features = length(scaler_mat_file.Scaled_Features_Names);
+            
+            for i = 1:num_features
+                feature_name = scaler_mat_file.Scaled_Features_Names{i};
+
+                obj.feature_names_to_normalize{i} = feature_name;
+                obj.min_vals.(feature_name) = scaler_mat_file.Min_Vals(i);
+                obj.max_vals.(feature_name) = scaler_mat_file.Max_Vals(i);
+            end
+
+            disp('feature_names_to_normalize:');
+            disp(obj.feature_names_to_normalize);
+            disp('min_vals:');
+            disp(obj.min_vals);
+            disp('max_vals:');
+            disp(obj.max_vals);
+
         end
         
         function normalized_data = normalizeFeatures(obj, data, feature_name)
@@ -113,6 +151,28 @@ classdef NNPredictor < handle
             end
         end
         
+        function denormalized_data = denormalizeOutput(obj, normalized_data, feature_name)
+            % Rückskalierung von normalisierten Daten zu Original-Skala
+            %
+            % Eingaben:
+            %   normalized_data - Normalisierte Daten [N x 1]
+            %   feature_name - Name des Features (String), z.B. 'Load'
+            %
+            % Ausgabe:
+            %   denormalized_data - Rückskalierte Daten [N x 1]
+            
+            if ~isfield(obj.min_vals, feature_name) || ~isfield(obj.max_vals, feature_name)
+                error('NNPredictor:MissingScalerParams', ...
+                    'Min/Max Werte für Feature "%s" nicht gefunden', feature_name);
+            end
+            
+            min_val = obj.min_vals.(feature_name);
+            max_val = obj.max_vals.(feature_name);
+            
+            % Rückskalierung: x_original = x_normalized * (max - min) + min
+            denormalized_data = normalized_data * (max_val - min_val) + min_val;
+        end
+        
         function forecast = predict(obj, input_data)
             % Macht eine Vorhersage basierend auf historischen Daten
             %
@@ -120,7 +180,7 @@ classdef NNPredictor < handle
             %   input_data - Struct oder Table mit Features als Felder/Spalten
             %                Jedes Feature muss ein Vektor der Länge input_seq_len sein
             %                Erwartete Features: 'Year', 'tod_sin', 'tod_cos', 
-            %                'weekday_sin', 'weekday_cos', 'doy_sin', 'doy_cos', 'Load'
+            %                'weekday_sin', 'weekday_cos', 'doy_sin', 'doy_cos', 'Load', 'Temperature'
             %
             % Ausgabe:
             %   forecast - Vorhersagevektor [prediction_horizon x 1]
@@ -170,9 +230,14 @@ classdef NNPredictor < handle
             % Bereite Input für ONNX Netzwerk vor
             % ONNX erwartet: [batch_size, seq_len, num_features]
             % Füge Batch-Dimension hinzu
-            input_tensor = permute(feature_matrix, [3, 1, 2]);  % [1, seq_len, num_features]
-            
-            % Konvertiere zu dlarray für Deep Learning Toolbox
+            % disp('Feature Matrix Size:');
+            % disp(size(feature_matrix));
+            % feature_matrix: [seq_len x num_features]  (z.B. [192 x 9])
+            num_features = size(feature_matrix,2);
+            seq_len = size(feature_matrix,1);
+
+            % Erzeuge Shape [C, B, T] = [num_features, 1, seq_len]
+            input_tensor = reshape(feature_matrix', [num_features, 1, seq_len]);   % -> [9 x 1 x 192]
             input_dlarray = dlarray(single(input_tensor), 'CBT');  % C=Channel, B=Batch, T=Time
             
 
@@ -186,6 +251,11 @@ classdef NNPredictor < handle
                     'Fehler bei der Vorhersage: %s', ME.message);
             end
             
+            % Rückskalierung des Outputs (das Netzwerk sagt 'Load' vorher)
+            % Das Netzwerk gibt normalisierte Werte aus, die wir zurückskalieren müssen
+            if ismember('Load', obj.feature_names_to_normalize)
+                forecast = obj.denormalizeOutput(forecast, 'Load');
+            end
 
             if length(forecast) ~= obj.prediction_horizon
                 warning('NNPredictor:UnexpectedOutputSize', ...

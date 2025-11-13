@@ -2,17 +2,33 @@ function plot_controller_results(forecasts, results, model_parameters, options )
     %TODO: Add description
     %% Plotting the results
 
+    % Use actual length of results arrays (in case N_sim was updated)
+    actual_N_sim = length(results.p_b_ch_applied_MPC);
+    
     % Time vector for simulation
-    t_sim = (0:options.N_sim-1) * options.Ts;
+    t_sim = (0:actual_N_sim-1) * options.Ts;
     t_full = (0:options.N_pred-1) * options.Ts;
 
+    % Create title suffix based on configuration
+    title_suffix = '';
+    if isfield(results, 'use_nn_predictor') && results.use_nn_predictor
+        title_suffix = ' (mit NN-Prädiktor)';
+    end
+    if isfield(results, 'use_real_data') && results.use_real_data
+        if ~isempty(title_suffix)
+            title_suffix = [title_suffix, ' und echten Daten'];
+        else
+            title_suffix = ' (mit echten Daten)';
+        end
+    end
+    
     % Figure 2: forecasts
     figure;
     subplot(2,1,1);
     plot(forecasts.t, forecasts.pv, 'LineWidth', 2, 'Color', [1 0.5 0]);
     xlabel('Time [h]');
     ylabel('PV Power [kW]');
-    title('PV Forecast (3 days)');
+    title(['PV Forecast', title_suffix]);
     grid on;
     xlim([0 max(forecasts.t)]);
 
@@ -20,14 +36,14 @@ function plot_controller_results(forecasts, results, model_parameters, options )
     plot(forecasts.t, forecasts.load, 'LineWidth', 2, 'Color', 'blue');
     xlabel('Time [h]');
     ylabel('Load [kW]');
-    title('Load Forecast (3 days)');
+    title(['Load Forecast', title_suffix]);
     grid on;
     xlim([0 max(forecasts.t)]);
 
 
     % Figure 3: System overview (Battery control, PV production and load with Grid-Net)
     figure;
-    sgtitle('MPC Controller Results');
+    sgtitle(['MPC Controller Results', title_suffix]);
 
     % Subplot 1: Battery control (Charging/Discharging combined)
     subplot(4,1,1);
@@ -43,7 +59,7 @@ function plot_controller_results(forecasts, results, model_parameters, options )
     % Subplot 2: PV production
     subplot(4,1,2);
     % Extract PV data for simulation period
-    pv_forecast = forecasts.pv(1:options.N_sim);
+    pv_forecast = forecasts.pv(1:actual_N_sim);
     plot(t_sim, pv_forecast, 'LineWidth', 2, 'Color', [1 0.5 0], 'DisplayName', 'PV Production');
     xlabel('Time [h]');
     ylabel('PV Power [kW]');
@@ -55,7 +71,7 @@ function plot_controller_results(forecasts, results, model_parameters, options )
     % Subplot 3: Load and Grid-Net-Power
     subplot(4,1,3);
     % Extract load data for simulation period
-    load_forecast = forecasts.load(1:options.N_sim);
+    load_forecast = forecasts.load(1:actual_N_sim);
     plot(t_sim, load_forecast, 'LineWidth', 2, 'Color', [0.5 0 0.5], 'DisplayName', 'Load');
     hold on;
     plot(t_sim, -results.p_g_net_applied_MPC, 'LineWidth', 2, 'Color', 'blue', 'DisplayName', '-Grid-Net-Power');
@@ -69,7 +85,7 @@ function plot_controller_results(forecasts, results, model_parameters, options )
     ylim([min([load_forecast, -results.p_g_net_applied_MPC])*1.1, max([load_forecast, -results.p_g_net_applied_MPC])*1.1]);
 
     subplot(4,1,4);
-    plot((0:options.N_sim)*options.Ts, results.battery_energy_sim_MPC/model_parameters.E_bat, 'LineWidth', 2, 'Color', 'black');
+    plot((0:actual_N_sim)*options.Ts, results.battery_energy_sim_MPC/model_parameters.E_bat, 'LineWidth', 2, 'Color', 'black');
     hold on;
     yline((1-model_parameters.DOD), '--r', 'LineWidth', 1.5, 'DisplayName', 'Min SOC');
     yline(1.0, '--', 'Color', [0 0.5 0], 'LineWidth', 1.5, 'DisplayName', 'Max SOC');
@@ -180,7 +196,7 @@ function plot_controller_results(forecasts, results, model_parameters, options )
     area_plot_data_MPC = [results.p_g_net_applied_MPC; battery_net_MPC]';
 
     figure;
-    sgtitle('MPC Controller Results');
+    sgtitle(['MPC Controller Results', title_suffix]);
 
     subplot(3,1,1);
     hold on;
@@ -214,7 +230,7 @@ function plot_controller_results(forecasts, results, model_parameters, options )
     ylim([min(battery_net_MPC)*1.1, max(battery_net_MPC)*1.1]);
 
     subplot(3,1,3);
-    plot((0:options.N_sim)*options.Ts, results.battery_energy_sim_MPC/model_parameters.E_bat, 'LineWidth', 2, 'Color', 'black');
+    plot((0:actual_N_sim)*options.Ts, results.battery_energy_sim_MPC/model_parameters.E_bat, 'LineWidth', 2, 'Color', 'black');
     hold on;
     yline((1-model_parameters.DOD), '--r', 'LineWidth', 1.5, 'DisplayName', 'Min SOC');
     yline(1.0, '--', 'Color', [0 0.5 0], 'LineWidth', 1.5, 'DisplayName', 'Max SOC');
@@ -227,7 +243,7 @@ function plot_controller_results(forecasts, results, model_parameters, options )
     ylim([min(results.battery_energy_sim_MPC)*0.9/model_parameters.E_bat, 1.1]);
 
     figure;
-    sgtitle('MPC Controller Results');
+    sgtitle(['MPC Controller Results', title_suffix]);
 
     subplot(3,1,1);
     hold on;
@@ -251,7 +267,7 @@ function plot_controller_results(forecasts, results, model_parameters, options )
     ylim([min(results.p_net_applied_MPC)*1.1, max(results.p_net_applied_MPC)*1.1]);
 
     subplot(3,1,2);
-    pv_forecast = forecasts.pv(1:options.N_sim);
+    pv_forecast = forecasts.pv(1:actual_N_sim);
     plot(t_sim, pv_forecast, 'LineWidth', 2, 'Color', [1 0.5 0], 'DisplayName', 'PV Production');
     xlabel('Time [h]');
     ylabel('PV Power [kW]');
@@ -261,7 +277,7 @@ function plot_controller_results(forecasts, results, model_parameters, options )
     xlim([0 max(t_sim)]);
 
     subplot(3,1,3);
-    plot((0:options.N_sim)*options.Ts, results.battery_energy_sim_MPC/model_parameters.E_bat, 'LineWidth', 2, 'Color', 'black');
+    plot((0:actual_N_sim)*options.Ts, results.battery_energy_sim_MPC/model_parameters.E_bat, 'LineWidth', 2, 'Color', 'black');
     hold on;
     yline((1-model_parameters.DOD), '--r', 'LineWidth', 1.5, 'DisplayName', 'Min SOC');
     yline(1.0, '--', 'Color', [0 0.5 0], 'LineWidth', 1.5, 'DisplayName', 'Max SOC');
@@ -279,7 +295,7 @@ function plot_controller_results(forecasts, results, model_parameters, options )
 
         % Figure 3: System overview (Battery control, PV production and load with Grid-Net)
         figure;
-        sgtitle('Simple Controller Results');
+        sgtitle(['Simple Controller Results', title_suffix]);
 
         % Subplot 1: Battery control (Charging/Discharging combined)
         subplot(4,1,1);
@@ -295,7 +311,7 @@ function plot_controller_results(forecasts, results, model_parameters, options )
         % Subplot 2: PV production
         subplot(4,1,2);
         % Extract PV data for simulation period
-        pv_forecast = forecasts.pv(1:options.N_sim);
+        pv_forecast = forecasts.pv(1:actual_N_sim);
         plot(t_sim, pv_forecast, 'LineWidth', 2, 'Color', [1 0.5 0], 'DisplayName', 'PV Production');
         xlabel('Time [h]');
         ylabel('PV Power [kW]');
@@ -307,7 +323,7 @@ function plot_controller_results(forecasts, results, model_parameters, options )
         % Subplot 3: Load and Grid-Net-Power
         subplot(4,1,3);
         % Extract load data for simulation period
-        load_forecast = forecasts.load(1:options.N_sim);
+        load_forecast = forecasts.load(1:actual_N_sim);
         plot(t_sim, load_forecast, 'LineWidth', 2, 'Color', [0.5 0 0.5], 'DisplayName', 'Load');
         hold on;
         plot(t_sim, -results.p_g_net_applied_simple, 'LineWidth', 2, 'Color', 'blue', 'DisplayName', '-Grid-Net-Power');
@@ -321,7 +337,7 @@ function plot_controller_results(forecasts, results, model_parameters, options )
         ylim([min([load_forecast, -results.p_g_net_applied_simple])*1.1, max([load_forecast, -results.p_g_net_applied_simple])*1.1]);
 
         subplot(4,1,4);
-        plot((0:options.N_sim)*options.Ts, results.battery_energy_sim_simple/model_parameters.E_bat, 'LineWidth', 2, 'Color', 'black');
+        plot((0:actual_N_sim)*options.Ts, results.battery_energy_sim_simple/model_parameters.E_bat, 'LineWidth', 2, 'Color', 'black');
         hold on;
         yline((1-model_parameters.DOD), '--r', 'LineWidth', 1.5, 'DisplayName', 'Min SOC');
         yline(1.0, '--', 'Color', [0 0.5 0], 'LineWidth', 1.5, 'DisplayName', 'Max SOC');
@@ -338,7 +354,7 @@ function plot_controller_results(forecasts, results, model_parameters, options )
         area_plot_data_simple = [results.p_g_net_applied_simple; battery_net_simple]';
 
         figure;
-        sgtitle('simple Controller Results');
+        sgtitle(['Simple Controller Results', title_suffix]);
 
         subplot(3,1,1);
         hold on;
@@ -372,7 +388,7 @@ function plot_controller_results(forecasts, results, model_parameters, options )
         ylim([min(battery_net_simple)*1.1, max(battery_net_simple)*1.1]);
 
         subplot(3,1,3);
-        plot((0:options.N_sim)*options.Ts, results.battery_energy_sim_simple/model_parameters.E_bat, 'LineWidth', 2, 'Color', 'black');
+        plot((0:actual_N_sim)*options.Ts, results.battery_energy_sim_simple/model_parameters.E_bat, 'LineWidth', 2, 'Color', 'black');
         hold on;
         yline((1-model_parameters.DOD), '--r', 'LineWidth', 1.5, 'DisplayName', 'Min SOC');
         yline(1.0, '--', 'Color', [0 0.5 0], 'LineWidth', 1.5, 'DisplayName', 'Max SOC');
@@ -385,7 +401,7 @@ function plot_controller_results(forecasts, results, model_parameters, options )
         ylim([min(results.battery_energy_sim_simple)*0.9/model_parameters.E_bat, 1.1]);
 
         figure;
-        sgtitle('simple Controller Results');
+        sgtitle(['Simple Controller Results', title_suffix]);
 
         subplot(3,1,1);
         hold on;
@@ -409,7 +425,7 @@ function plot_controller_results(forecasts, results, model_parameters, options )
         ylim([min(results.p_net_applied_simple)*1.1, max(results.p_net_applied_simple)*1.1]);
 
         subplot(3,1,2);
-        pv_forecast = forecasts.pv(1:options.N_sim);
+        pv_forecast = forecasts.pv(1:actual_N_sim);
         plot(t_sim, pv_forecast, 'LineWidth', 2, 'Color', [1 0.5 0], 'DisplayName', 'PV Production');
         xlabel('Time [h]');
         ylabel('PV Power [kW]');
@@ -419,7 +435,7 @@ function plot_controller_results(forecasts, results, model_parameters, options )
         xlim([0 max(t_sim)]);
 
         subplot(3,1,3);
-        plot((0:options.N_sim)*options.Ts, results.battery_energy_sim_simple/model_parameters.E_bat, 'LineWidth', 2, 'Color', 'black');
+        plot((0:actual_N_sim)*options.Ts, results.battery_energy_sim_simple/model_parameters.E_bat, 'LineWidth', 2, 'Color', 'black');
         hold on;
         yline((1-model_parameters.DOD), '--r', 'LineWidth', 1.5, 'DisplayName', 'Min SOC');
         yline(1.0, '--', 'Color', [0 0.5 0], 'LineWidth', 1.5, 'DisplayName', 'Max SOC');
@@ -434,7 +450,7 @@ function plot_controller_results(forecasts, results, model_parameters, options )
     end
 
     Ts = options.Ts; % Sampling time in hours
-    N_sim = options.N_sim; % Number of simulation steps
+    N_sim = actual_N_sim; % Number of simulation steps (use actual length)
     N_pred = options.N_pred; % Prediction horizon
     battery_energy_sim_MPC = results.battery_energy_sim_MPC;
     p_b_ch_applied_MPC = results.p_b_ch_applied_MPC;
