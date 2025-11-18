@@ -11,12 +11,15 @@ clear
 
 %% Simulation Parameters
 Ts = 15/60; % Time step in hours (15 minutes)
-N_pred = 24; % Prediction horizon: 24 hours in time steps
+N_pred = 32; % Prediction horizon: 24 hours in time steps
+% TODO: es gibt auhc kaum einen unterschied zwischen forecast von 32 zu 48
+
+
 %N_sim = 48/Ts; % Simulation time: 48 hours in time steps (2 days)
 x_initial = 2.5; % Initial battery capacity in kWh (must be > 1.8 kWh)
 
-start_date = datetime(2019, 3, 17, 0, 0, 0); 
-end_date = datetime(2019, 3, 23, 0, 0, 0);   
+start_date = datetime(2019, 3, 22, 0, 0, 0); 
+end_date = datetime(2019, 3, 25, 0, 0, 0);   
 
 N_sim = ceil(hours(end_date - start_date) / Ts);  
 disp(['Calculated N_sim: ', num2str(N_sim)]);
@@ -118,6 +121,8 @@ sim = EnergyManagementSimulation(...
  
 
 % Run full horizon optimization for debugging
+% TODO: Rausfinden was diese funktion genau macht und für was ich die brauche
+
 sim.runFullHorizonOptimization();
 
 % Run MPC simulation using the NN predictor with real data
@@ -140,6 +145,10 @@ fprintf('=================================================================\n');
 forecasts_struct = sim.getForecastsStruct();
 results_struct = sim.getResultsStruct();
 model_parameters = sim.getModelParameters();
+disp("Firecasts Struct:");
+disp(forecasts_struct);
+disp("Results Struct:");
+disp(results_struct);
 
 % Plot results
 plot_controller_results(forecasts_struct, results_struct, model_parameters, plot_options);
