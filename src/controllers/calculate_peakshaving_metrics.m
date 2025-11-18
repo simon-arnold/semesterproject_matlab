@@ -26,8 +26,8 @@ function [metrics_MPC, metrics_baseline] = calculate_peakshaving_metrics(p_grid_
         yline(-p_ref, 'k--', '-p_{ref}', 'LineWidth', 2, 'LabelHorizontalAlignment', 'left', 'LabelVerticalAlignment', 'middle', 'FontSize', 12);
         xlabel('Time step');
         ylabel('Grid power (kW)');
-        title('Grid Power with MPC vs Baseline');
-        legend('MPC Grid Power', 'Baseline Grid Power', 'Location', 'Best');
+        title('Grid Power with MPC vs Simple Controller');
+        legend('MPC Grid Power', 'Simple Controller Grid Power', 'Location', 'Best');
         xlim([1, length(p_grid_net_MPC)]);
         grid on;
         hold off;

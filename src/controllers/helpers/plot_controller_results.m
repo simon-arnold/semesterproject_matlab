@@ -1,4 +1,4 @@
-function plot_controller_results(forecasts, results, model_parameters, options )
+function plot_controller_results(correct_load_pv_data, results, model_parameters, options )
     %TODO: Add description
     %% Plotting the results
 
@@ -26,20 +26,20 @@ function plot_controller_results(forecasts, results, model_parameters, options )
     figure;
     sgtitle(["PV and Load over testing period"]);
     subplot(2,1,1);
-    plot(forecasts.t, forecasts.pv, 'LineWidth', 2, 'Color', [1 0.5 0]);
+    plot(correct_load_pv_data.t, correct_load_pv_data.pv, 'LineWidth', 2, 'Color', [1 0.5 0]);
     xlabel('Time [h]');
     ylabel('PV Power [kW]');
     title(['PV Data']);
     grid on;
-    xlim([forecasts.t(1) forecasts.t(end)]);
+    xlim([correct_load_pv_data.t(1) correct_load_pv_data.t(end)]);
 
     subplot(2,1,2);
-    plot(forecasts.t, forecasts.load, 'LineWidth', 2, 'Color', 'blue');
+    plot(correct_load_pv_data.t, correct_load_pv_data.load, 'LineWidth', 2, 'Color', 'blue');
     xlabel('Time [h]');
     ylabel('Load [kW]');
     title(['Load Data']);
     grid on;
-    xlim([forecasts.t(1) forecasts.t(end)]);
+    xlim([correct_load_pv_data.t(1) correct_load_pv_data.t(end)]);
 
 
     % Figure 3: System overview (Battery control, PV production and load with Grid-Net)
@@ -60,7 +60,7 @@ function plot_controller_results(forecasts, results, model_parameters, options )
     % Subplot 2: PV production
     subplot(4,1,2);
     % Extract PV data for simulation period
-    pv_forecast = forecasts.pv(1:actual_N_sim);
+    pv_forecast = correct_load_pv_data.pv(1:actual_N_sim);
     plot(t_sim, pv_forecast, 'LineWidth', 2, 'Color', [1 0.5 0], 'DisplayName', 'PV Production');
     xlabel('Time [h]');
     ylabel('PV Power [kW]');
@@ -72,7 +72,7 @@ function plot_controller_results(forecasts, results, model_parameters, options )
     % Subplot 3: Load and Grid-Net-Power
     subplot(4,1,3);
     % Extract load data for simulation period
-    load_forecast = forecasts.load(1:actual_N_sim);
+    load_forecast = correct_load_pv_data.load(1:actual_N_sim);
     plot(t_sim, load_forecast, 'LineWidth', 2, 'Color', [0.5 0 0.5], 'DisplayName', 'Load');
     hold on;
     plot(t_sim, -results.p_g_net_applied_MPC, 'LineWidth', 2, 'Color', 'blue', 'DisplayName', '-Grid-Net-Power');
@@ -268,7 +268,7 @@ function plot_controller_results(forecasts, results, model_parameters, options )
     ylim([min(results.p_net_applied_MPC)*1.1, max(results.p_net_applied_MPC)*1.1]);
 
     subplot(3,1,2);
-    pv_forecast = forecasts.pv(1:actual_N_sim);
+    pv_forecast = correct_load_pv_data.pv(1:actual_N_sim);
     plot(t_sim, pv_forecast, 'LineWidth', 2, 'Color', [1 0.5 0], 'DisplayName', 'PV Production');
     xlabel('Time [h]');
     ylabel('PV Power [kW]');
@@ -312,7 +312,7 @@ function plot_controller_results(forecasts, results, model_parameters, options )
         % Subplot 2: PV production
         subplot(4,1,2);
         % Extract PV data for simulation period
-        pv_forecast = forecasts.pv(1:actual_N_sim);
+        pv_forecast = correct_load_pv_data.pv(1:actual_N_sim);
         plot(t_sim, pv_forecast, 'LineWidth', 2, 'Color', [1 0.5 0], 'DisplayName', 'PV Production');
         xlabel('Time [h]');
         ylabel('PV Power [kW]');
@@ -324,7 +324,7 @@ function plot_controller_results(forecasts, results, model_parameters, options )
         % Subplot 3: Load and Grid-Net-Power
         subplot(4,1,3);
         % Extract load data for simulation period
-        load_forecast = forecasts.load(1:actual_N_sim);
+        load_forecast = correct_load_pv_data.load(1:actual_N_sim);
         plot(t_sim, load_forecast, 'LineWidth', 2, 'Color', [0.5 0 0.5], 'DisplayName', 'Load');
         hold on;
         plot(t_sim, -results.p_g_net_applied_simple, 'LineWidth', 2, 'Color', 'blue', 'DisplayName', '-Grid-Net-Power');
@@ -426,7 +426,7 @@ function plot_controller_results(forecasts, results, model_parameters, options )
         ylim([min(results.p_net_applied_simple)*1.1, max(results.p_net_applied_simple)*1.1]);
 
         subplot(3,1,2);
-        pv_forecast = forecasts.pv(1:actual_N_sim);
+        pv_forecast = correct_load_pv_data.pv(1:actual_N_sim);
         plot(t_sim, pv_forecast, 'LineWidth', 2, 'Color', [1 0.5 0], 'DisplayName', 'PV Production');
         xlabel('Time [h]');
         ylabel('PV Power [kW]');
