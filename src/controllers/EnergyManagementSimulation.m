@@ -634,9 +634,19 @@ classdef EnergyManagementSimulation < handle
             % Outputs:
             %   pv_window - PV forecast window (from real data)
             %   load_window - Load forecast window (from NN predictor)
+
+            % Absolute indices in real_data_table
+            % Forecast window should contain the NEXT N_pred steps: [k+1 ... k+N_pred]
+            % This is consistent with MPC which receives [current, forecast] = [k, k+1...k+N_pred]
+            abs_start = obj.sim_start_idx + k; % start at NEXT timestep (k+1)
+            abs_end = abs_start + obj.N_pred - 1;
             
             % Generate NN forecast for load (comes in W, convert to kW)
-            load_window = obj.generateNNForecast(k);
+            if obj.use_nn_predictor
+                load_window = obj.generateNNForecast(k);
+            else
+                load_window = obj.real_data_table.Load(abs_start:abs_end);
+            end
             
             if length(load_window) ~= obj.N_pred
                 error('EnergyManagementSimulation:NNForecastLengthMismatch', ...
@@ -646,12 +656,7 @@ classdef EnergyManagementSimulation < handle
             % Convert to row vector and from W to kW
             load_window = load_window(:)' / 1000;
             
-            % Get PV forecast from real data table
-            % Absolute indices in real_data_table
-            % Forecast window should contain the NEXT N_pred steps: [k+1 ... k+N_pred]
-            % This is consistent with MPC which receives [current, forecast] = [k, k+1...k+N_pred]
-            abs_start = obj.sim_start_idx + k; % start at NEXT timestep (k+1)
-            abs_end = abs_start + obj.N_pred - 1;
+           
             
             if abs_end > height(obj.real_data_table)
                 error('EnergyManagementSimulation:InsufficientPVData', ...
@@ -747,10 +752,6 @@ classdef EnergyManagementSimulation < handle
         function runMPCSimulationWithNN(obj)
             % runMPCSimulationWithNN Run MPC simulation using NN predictor
             
-            if ~obj.use_nn_predictor
-                error('EnergyManagementSimulation:NoPredictorConfigured', ...
-                    'NNPredictor not initialized. Set UseNNPredictor=true in constructor.');
-            end
             
             if isempty(obj.real_data_table)
                 error('EnergyManagementSimulation:NoRealData', ...
