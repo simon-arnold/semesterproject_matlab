@@ -11,7 +11,7 @@ clear
 
 %% Simulation Parameters
 Ts = 15/60; % Time step in hours (15 minutes)
-N_pred = 32; % Prediction horizon: 24 hours in time steps
+N_pred = 48; % Prediction horizon: 24 hours in time steps
 % TODO: es gibt auhc kaum einen unterschied zwischen forecast von 32 zu 48
 
 
@@ -123,7 +123,7 @@ sim = EnergyManagementSimulation(...
 % Run full horizon optimization for debugging
 % TODO: Rausfinden was diese funktion genau macht und für was ich die brauche
 
-sim.runFullHorizonOptimization();
+% sim.runFullHorizonOptimization();
 
 % Run MPC simulation using the NN predictor with real data
 sim.runMPCSimulationWithNN();
@@ -142,16 +142,16 @@ fprintf('  Generating Results\n');
 fprintf('=================================================================\n');
 
 % Get results from simulation
-forecasts_struct = sim.getForecastsStruct();
+Correct_Load_PV_data = sim.getCorrectLoadPV();
 results_struct = sim.getResultsStruct();
 model_parameters = sim.getModelParameters();
-disp("Firecasts Struct:");
-disp(forecasts_struct);
+disp("Forecasts Struct:");
+disp(Correct_Load_PV_data);
 disp("Results Struct:");
 disp(results_struct);
 
 % Plot results
-plot_controller_results(forecasts_struct, results_struct, model_parameters, plot_options);
+plot_controller_results(Correct_Load_PV_data, results_struct, model_parameters, plot_options);
 
 % Calculate and plot peak shaving metrics
 calculate_peakshaving_metrics(...

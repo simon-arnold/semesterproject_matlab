@@ -22,23 +22,24 @@ function plot_controller_results(forecasts, results, model_parameters, options )
         end
     end
     
-    % Figure 2: forecasts
+    %% Figure 1: Forecasts over prediction horizon
     figure;
+    sgtitle(["PV and Load over testing period"]);
     subplot(2,1,1);
     plot(forecasts.t, forecasts.pv, 'LineWidth', 2, 'Color', [1 0.5 0]);
     xlabel('Time [h]');
     ylabel('PV Power [kW]');
-    title(['PV Forecast', title_suffix]);
+    title(['PV Data']);
     grid on;
-    xlim([0 max(forecasts.t)]);
+    xlim([forecasts.t(1) forecasts.t(end)]);
 
     subplot(2,1,2);
     plot(forecasts.t, forecasts.load, 'LineWidth', 2, 'Color', 'blue');
     xlabel('Time [h]');
     ylabel('Load [kW]');
-    title(['Load Forecast', title_suffix]);
+    title(['Load Data']);
     grid on;
-    xlim([0 max(forecasts.t)]);
+    xlim([forecasts.t(1) forecasts.t(end)]);
 
 
     % Figure 3: System overview (Battery control, PV production and load with Grid-Net)
