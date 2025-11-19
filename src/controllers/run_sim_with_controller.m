@@ -30,9 +30,9 @@ battery_params = struct(...
     'nu_ch', 0.93, ...          % Charging efficiency
     'nu_dch', 0.93, ...         % Discharging efficiency
     'L_bat', 0, ...             % Battery loss factor
-    'E_bat', 3, ...             % Battery capacity in kWh
-    'DOD', 0.8, ...             % Depth of discharge
-    'P_batconv_max', 1.530, ... % Maximum battery converter power
+    'E_bat', 5.100, ...             % Battery capacity in kWh
+    'DOD', 0.6, ...             % Depth of discharge
+    'P_batconv_max', 2000, ... % Maximum battery converter power
     'P_gridcons_max', 30 ...    % Maximum grid consumption power
 );
 
