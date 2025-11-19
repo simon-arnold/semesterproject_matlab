@@ -16,6 +16,9 @@ classdef MPC_Controller < handle
         E_bat       % battery capacity
         DOD         % Depth of Discharge
 
+        % PV System
+        nu_pv       % PV efficiency
+
         % Max Transmission Power
         P_batconv_max
         P_gridcons_max
@@ -27,7 +30,7 @@ classdef MPC_Controller < handle
     methods
         function obj = MPC_Controller(T_pred, N_pred, T_s, R_cost, ...
                                       nu_ch, nu_dch, L_bat, E_bat, ...
-                                      DOD, P_batconv_max, P_gridcons_max)
+                                      DOD, P_batconv_max, P_gridcons_max, nu_pv)
             % Konstruktor: System und MPC Parameter initialisieren
             obj.T_pred = T_pred;
             obj.N_pred = N_pred;
@@ -40,6 +43,7 @@ classdef MPC_Controller < handle
             obj.DOD = DOD;
             obj.P_batconv_max = P_batconv_max;
             obj.P_gridcons_max = P_gridcons_max;
+            obj.nu_pv = nu_pv;
 
             % Optimierungsproblem aufbauen
             obj.constructOptimizationProblem();
@@ -51,19 +55,19 @@ classdef MPC_Controller < handle
             
             % Parameters
             x1 = sdpvar(obj.nx,1);     
-            p_in = sdpvar(1,obj.N_pred);  
+            p_in = sdpvar(1,obj.N_pred + 1);  
 
             % Optimization Variables - real numbers
-            p_g_in = sdpvar(1,obj.N_pred); % TODO: later rewrite power flow balance to get rid of those parameters -> express as function of p_b... -> write constraints as min max or so
-            p_g_out = sdpvar(1,obj.N_pred);
-            p_b_ch = sdpvar(1,obj.N_pred);
-            p_b_dch = sdpvar(1,obj.N_pred);
+            p_g_in = sdpvar(1,obj.N_pred + 1); % TODO: later rewrite power flow balance to get rid of those parameters -> express as function of p_b... -> write constraints as min max or so
+            p_g_out = sdpvar(1,obj.N_pred + 1);
+            p_b_ch = sdpvar(1,obj.N_pred + 1);
+            p_b_dch = sdpvar(1,obj.N_pred + 1);
 
             % Optimization variables - binary
-            delta_b_ch = binvar(1,obj.N_pred);
-            delta_b_dch = binvar(1,obj.N_pred);
-            delta_g_in = binvar(1,obj.N_pred);
-            delta_g_out = binvar(1,obj.N_pred);
+            delta_b_ch = binvar(1,obj.N_pred + 1);
+            delta_b_dch = binvar(1,obj.N_pred + 1);
+            delta_g_in = binvar(1,obj.N_pred + 1);
+            delta_g_out = binvar(1,obj.N_pred + 1);
 
 
             constraints = obj.computeConstraints(x1, p_in, p_g_in, p_g_out, p_b_ch, p_b_dch, delta_b_ch, delta_b_dch, delta_g_in, delta_g_out);
@@ -82,7 +86,7 @@ classdef MPC_Controller < handle
 
         function cost = computeCost(obj, p_in, p_b_ch, p_b_dch, p_g_in)
             cost = 0;
-            for k = 1:obj.N_pred
+            for k = 1:(obj.N_pred + 1)
                 u = [p_in(k) - p_b_ch(k); p_in(k) - p_b_dch(k); p_g_in(k)];
                 cost = cost + u'*obj.R_cost*u;
             end
@@ -104,7 +108,7 @@ classdef MPC_Controller < handle
 
             x = [x1];
 
-            for k = 1:obj.N_pred-1
+            for k = 1:obj.N_pred
                 x_next = x(:,k) + obj.nu_ch*p_b_ch(k)*delta_t + (1/obj.nu_dch)*p_b_dch(k)*delta_t - obj.L_bat*x(:,k)*delta_t;
                 constraints = [constraints, minimal_battery_level <= x_next <= obj.E_bat];
                 x = [x, x_next];
@@ -135,10 +139,20 @@ classdef MPC_Controller < handle
             
         end
 
-        function [p_b_ch_opt, p_b_dch_opt, p_g_in_opt, p_g_out_opt] = computeControlAction(obj, current_battery_energy, pv_forecast, load_forecast)
+        function [p_b_ch_opt, p_b_dch_opt, p_g_in_opt, p_g_out_opt] = computeControlAction(obj, current_battery_energy, current_pv, current_load, pv_forecast, load_forecast)
             % Führt die Optimierung aus und gibt die optimalen Steuerinputs zurück
-            p_in = pv_forecast - load_forecast;
+            disp("current PV: " + num2str(current_pv) + ", current Load: " + num2str(current_load));
+            display("PV Forecast: " + num2str(pv_forecast));
+            display("Load Forecast: " + num2str(load_forecast));
+
             
+
+            p_in_current = current_pv * obj.nu_pv - current_load;
+            p_in_forecast = pv_forecast * obj.nu_pv - load_forecast;
+
+            p_in = [p_in_current, p_in_forecast]; 
+
+
             % Debug-Informationen
             % disp(['Aktuelle Batterieenergie: ', num2str(current_battery_energy)]);
             % disp(['Min/Max p_in: ', num2str(min(p_in)), ' / ', num2str(max(p_in))]);
@@ -146,6 +160,8 @@ classdef MPC_Controller < handle
             % disp(['Minimaler Batterielevel: ', num2str((1-obj.DOD)*obj.E_bat)]);
             
             [u, diagnostics] = obj.controller{current_battery_energy, p_in}; 
+
+            disp("u length: " + num2str(length(u)));
             
             % Prüfe Solver-Status
             if diagnostics ~= 0

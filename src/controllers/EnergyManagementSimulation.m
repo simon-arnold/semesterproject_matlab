@@ -39,6 +39,9 @@ classdef EnergyManagementSimulation < handle
         L_bat           % Battery loss factor
         E_bat           % Battery capacity
         DOD             % Depth of discharge
+
+        % PV parameters
+        nu_pv           % PV efficiency
         
         % Noise options
         noise_options
@@ -82,6 +85,7 @@ classdef EnergyManagementSimulation < handle
             obj.L_bat = battery_params.L_bat;
             obj.E_bat = battery_params.E_bat;
             obj.DOD = battery_params.DOD;
+            obj.nu_pv = battery_params.nu_pv;
             
             % Initialize noise options
             obj.noise_options = noise_opts;
@@ -228,13 +232,23 @@ classdef EnergyManagementSimulation < handle
             
             % Get forecast window
             [pv_window, load_window] = obj.getForecastWindow(k);
-            
+
             % Get current battery state
             battery_state = obj.history_mpc.battery_energy(k);
-            
-            % Compute optimal control action
+
+            % Get current PV and Load values (absolute index if real data available)
+            if ~isempty(obj.real_data_table)
+                abs_idx = obj.sim_start_idx + k - 1;
+                pv_current = obj.real_data_table.PV_forecast(abs_idx) / 1000;  % W to kW
+                load_current = obj.real_data_table.Load(abs_idx) / 1000;      % W to kW
+            else
+                pv_current = obj.pv_forecast(k);
+                load_current = obj.load_forecast(k);
+            end
+
+            % Compute optimal control action (pass current values + forecast)
             [p_b_ch_opt, p_b_dch_opt, p_g_in_opt_full, p_g_out_opt_full] = ...
-                obj.mpc_controller.computeControlAction(battery_state, pv_window, load_window);
+                obj.mpc_controller.computeControlAction(battery_state, pv_current, load_current, pv_window, load_window);
             
             % Extract first control action (receding horizon)
             p_b_ch = p_b_ch_opt(1);
@@ -307,7 +321,7 @@ classdef EnergyManagementSimulation < handle
             end
             
             % Calculate net power flows using actual values
-            obj.history_mpc.p_net(k) = pv_actual - load_actual;
+            obj.history_mpc.p_net(k) = pv_actual * obj.nu_pv - load_actual;
             obj.history_mpc.p_g_net(k) = obj.history_mpc.p_net(k) - p_b_ch - p_b_dch;
             
             % Calculate actual grid power (not from optimizer)
@@ -347,7 +361,7 @@ classdef EnergyManagementSimulation < handle
             end
             
             % Calculate net power flows using actual values
-            obj.history_simple.p_net(k) = pv_actual - load_actual;
+            obj.history_simple.p_net(k) = pv_actual * obj.nu_pv - load_actual;
             obj.history_simple.p_g_net(k) = obj.history_simple.p_net(k) - p_b_ch - p_b_dch;
             
             % Calculate actual grid power
@@ -412,6 +426,8 @@ classdef EnergyManagementSimulation < handle
         %% Get Results for Plotting
         function results_struct = getResultsStruct(obj)
             % getResultsStruct Returns results in the format expected by plotting function
+
+            %TODO: Convert those in only one per conection (liek add charge and discharge -> pay attention to keep Vorzeichenkkonvention)
             
             results_struct = struct(...
                 'p_b_ch_applied_MPC', obj.history_mpc.p_b_ch, ...
@@ -433,7 +449,7 @@ classdef EnergyManagementSimulation < handle
         end
         
         %% Get Forecasts for Plotting
-        function forecasts_struct = getForecastsStruct(obj)
+        function load_pv_struct = getCorrectLoadPV(obj)
             % getForecastsStruct Returns forecasts in the format expected by plotting function
             
             if ~isempty(obj.real_data_table)
@@ -445,10 +461,10 @@ classdef EnergyManagementSimulation < handle
                 pv_for_plot = obj.real_data_table.PV_forecast(sim_indices) / 1000;
                 load_for_plot = obj.real_data_table.Load(sim_indices) / 1000;
                 
-                % Create time vector for plotting (in hours, starting from 0)
-                t_for_plot = (0:obj.N_sim-1) * obj.Ts;
+                % Create time vector for plotting: use real datetime range
+                t_for_plot = obj.real_data_times(sim_indices)';
                 
-                forecasts_struct = struct(...
+                load_pv_struct = struct(...
                     'pv', pv_for_plot(:)', ...
                     'load', load_for_plot(:)', ...
                     't', t_for_plot, ...
@@ -457,7 +473,7 @@ classdef EnergyManagementSimulation < handle
                     'end_date', obj.end_date);
             else
                 % Use generated forecasts (old behavior)
-                forecasts_struct = struct(...
+                load_pv_struct = struct(...
                     'pv', obj.pv_forecast(1:obj.N_sim), ...
                     'load', obj.load_forecast(1:obj.N_sim), ...
                     't', obj.t_extended(1:obj.N_sim), ...
@@ -584,7 +600,8 @@ classdef EnergyManagementSimulation < handle
             % k is relative to simulation start (sim_start_idx)
             absolute_k = obj.sim_start_idx + k - 1;
             
-            % Calculate start index for history (need input_len history before current step)
+            % Calculate start index for history (need input_len history UP TO AND INCLUDING current step k)
+            % NN should see [k-191 ... k] to predict [k+1 ... k+N_pred]
             start_idx = absolute_k - input_len + 1;
             
             if start_idx < 1
@@ -593,16 +610,21 @@ classdef EnergyManagementSimulation < handle
                     k, input_len);
             end
             
-            % Prepare features for predictor
+            % Prepare features for predictor: Historie [start_idx ... absolute_k]
+            % This gives the NN input_len timesteps of history UP TO AND INCLUDING current timestep
             features = prepare_predictor_features(obj.real_data_table, start_idx, input_len);
+
+            % Print 10 Last timesteps of Load feature for debugging
+            disp('Last 10 timesteps of Load feature for NN predictor (history up to k):');
+            disp(features.Load(end-9:end));
             
             % Generate forecast
             forecast = obj.nn_predictor.predict(features);
             
-            % Forecast is a vector of length prediction_horizon
+            % Forecast is a vector of length prediction_horizon covering [k+1 ... k+N_pred]
             if mod(k, 50) == 1  % Only print occasionally to reduce output
-                fprintf('Generated NN forecast for timestep %d (absolute idx: %d, horizon: %d)\n', ...
-                    k, absolute_k, length(forecast));
+                fprintf('Generated NN forecast for timestep %d (absolute idx: %d), history: [%d...%d], forecast: [%d...%d]\n', ...
+                    k, absolute_k, start_idx, absolute_k, absolute_k+1, absolute_k+length(forecast));
             end
         end
         
@@ -616,9 +638,19 @@ classdef EnergyManagementSimulation < handle
             % Outputs:
             %   pv_window - PV forecast window (from real data)
             %   load_window - Load forecast window (from NN predictor)
+
+            % Absolute indices in real_data_table
+            % Forecast window should contain the NEXT N_pred steps: [k+1 ... k+N_pred]
+            % This is consistent with MPC which receives [current, forecast] = [k, k+1...k+N_pred]
+            abs_start = obj.sim_start_idx + k; % start at NEXT timestep (k+1)
+            abs_end = abs_start + obj.N_pred - 1;
             
             % Generate NN forecast for load (comes in W, convert to kW)
-            load_window = obj.generateNNForecast(k);
+            if obj.use_nn_predictor
+                load_window = obj.generateNNForecast(k);
+            else
+                load_window = obj.real_data_table.Load(abs_start:abs_end);
+            end
             
             if length(load_window) ~= obj.N_pred
                 error('EnergyManagementSimulation:NNForecastLengthMismatch', ...
@@ -628,10 +660,7 @@ classdef EnergyManagementSimulation < handle
             % Convert to row vector and from W to kW
             load_window = load_window(:)' / 1000;
             
-            % Get PV forecast from real data table
-            % Absolute indices in real_data_table
-            abs_start = obj.sim_start_idx + k - 1;
-            abs_end = abs_start + obj.N_pred - 1;
+           
             
             if abs_end > height(obj.real_data_table)
                 error('EnergyManagementSimulation:InsufficientPVData', ...
@@ -653,10 +682,11 @@ classdef EnergyManagementSimulation < handle
             % Ensure row vector and convert W to kW
             pv_window = pv_window(:)' / 1000;
 
-            % disp('PV Window length:');
-            % disp(length(pv_window));
-            
-            
+            disp('PV Window length:');
+            disp(length(pv_window));
+            disp('Load Window length:');
+            disp(length(load_window));
+
             % Optional: Add noise if enabled (if you want to test noise on real PV forecast)
             if obj.noise_options.apply_noise
                 [pv_window, load_window] = add_forecast_noise(...
@@ -691,10 +721,15 @@ classdef EnergyManagementSimulation < handle
             battery_state = obj.history_mpc.battery_energy(k);
             disp('battery_state:')
             disp(battery_state);
+
+            % Get current PV and Load values (absolute index if real data available)
+            abs_idx = obj.sim_start_idx + k - 1;
+            pv_current = obj.real_data_table.PV_forecast(abs_idx) / 1000;
+            load_current = obj.real_data_table.Load(abs_idx) / 1000;
             
             % Compute optimal control action
             [p_b_ch_opt, p_b_dch_opt, p_g_in_opt_full, p_g_out_opt_full] = ...
-                obj.mpc_controller.computeControlAction(battery_state, pv_window, load_window);
+                obj.mpc_controller.computeControlAction(battery_state, pv_current, load_current, pv_window, load_window);
             % disp('Computed optimal control actions:');
             % disp('p_b_ch_opt:');
             % disp(p_b_ch_opt);
@@ -706,6 +741,9 @@ classdef EnergyManagementSimulation < handle
             % disp(p_g_out_opt_full);
 
             % error('Debug stop after computing control actions with NN predictor.');
+
+            disp("True Load Forecast")
+            disp(obj.real_data_table.Load(abs_idx+1:abs_idx + obj.N_pred)' / 1000);
             
             % Extract first control action
             p_b_ch = p_b_ch_opt(1);
@@ -718,10 +756,6 @@ classdef EnergyManagementSimulation < handle
         function runMPCSimulationWithNN(obj)
             % runMPCSimulationWithNN Run MPC simulation using NN predictor
             
-            if ~obj.use_nn_predictor
-                error('EnergyManagementSimulation:NoPredictorConfigured', ...
-                    'NNPredictor not initialized. Set UseNNPredictor=true in constructor.');
-            end
             
             if isempty(obj.real_data_table)
                 error('EnergyManagementSimulation:NoRealData', ...

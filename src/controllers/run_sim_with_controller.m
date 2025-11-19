@@ -11,7 +11,7 @@ clear
 
 %% Simulation Parameters
 Ts = 15/60; % Time step in hours (15 minutes)
-N_pred = 32; % Prediction horizon: 24 hours in time steps
+N_pred = 48; % Prediction horizon: 24 hours in time steps
 % TODO: es gibt auhc kaum einen unterschied zwischen forecast von 32 zu 48
 
 
@@ -30,10 +30,11 @@ battery_params = struct(...
     'nu_ch', 0.93, ...          % Charging efficiency
     'nu_dch', 0.93, ...         % Discharging efficiency
     'L_bat', 0, ...             % Battery loss factor
-    'E_bat', 3, ...             % Battery capacity in kWh
-    'DOD', 0.8, ...             % Depth of discharge
-    'P_batconv_max', 1.530, ... % Maximum battery converter power
-    'P_gridcons_max', 30 ...    % Maximum grid consumption power
+    'E_bat', 5.100, ...             % Battery capacity in kWh
+    'DOD', 0.6, ...             % Depth of discharge
+    'P_batconv_max', 2000, ... % Maximum battery converter power
+    'P_gridcons_max', 30, ...    % Maximum grid consumption power
+    'nu_pv', 0.96 ...
 );
 
 %% MPC Cost Matrix
@@ -80,12 +81,13 @@ mpc_controller = MPC_Controller(...
     battery_params.nu_ch, battery_params.nu_dch, ...
     battery_params.L_bat, battery_params.E_bat, ...
     battery_params.DOD, battery_params.P_batconv_max, ...
-    battery_params.P_gridcons_max);
+    battery_params.P_gridcons_max, battery_params.nu_pv);
 
 simple_controller_obj = simple_controller(...
     Ts, battery_params.nu_ch, battery_params.nu_dch, ...
     battery_params.E_bat, battery_params.DOD, ...
-    battery_params.P_batconv_max, battery_params.P_gridcons_max);
+    battery_params.P_batconv_max, battery_params.P_gridcons_max, ...
+    battery_params.nu_pv);
 
 %% Create Simulation Parameters Structure
 sim_params = struct(...
@@ -113,7 +115,7 @@ fprintf('=================================================================\n\n')
 % Initialize simulation object
 sim = EnergyManagementSimulation(...
     sim_params, battery_params, noise_options, ...
-    'UseNNPredictor', true, ...
+    'UseNNPredictor', false, ...
     'PredictionHorizon', N_pred, ...
     'UseRealData', true, ...
     'StartDate', start_date, ...
@@ -123,7 +125,7 @@ sim = EnergyManagementSimulation(...
 % Run full horizon optimization for debugging
 % TODO: Rausfinden was diese funktion genau macht und für was ich die brauche
 
-sim.runFullHorizonOptimization();
+% sim.runFullHorizonOptimization();
 
 % Run MPC simulation using the NN predictor with real data
 sim.runMPCSimulationWithNN();
@@ -142,16 +144,16 @@ fprintf('  Generating Results\n');
 fprintf('=================================================================\n');
 
 % Get results from simulation
-forecasts_struct = sim.getForecastsStruct();
+Correct_Load_PV_data = sim.getCorrectLoadPV();
 results_struct = sim.getResultsStruct();
 model_parameters = sim.getModelParameters();
-disp("Firecasts Struct:");
-disp(forecasts_struct);
+disp("Forecasts Struct:");
+disp(Correct_Load_PV_data);
 disp("Results Struct:");
 disp(results_struct);
 
 % Plot results
-plot_controller_results(forecasts_struct, results_struct, model_parameters, plot_options);
+plot_controller_results(Correct_Load_PV_data, results_struct, model_parameters, plot_options);
 
 % Calculate and plot peak shaving metrics
 calculate_peakshaving_metrics(...
