@@ -39,6 +39,9 @@ classdef EnergyManagementSimulation < handle
         L_bat           % Battery loss factor
         E_bat           % Battery capacity
         DOD             % Depth of discharge
+
+        % PV parameters
+        nu_pv           % PV efficiency
         
         % Noise options
         noise_options
@@ -82,6 +85,7 @@ classdef EnergyManagementSimulation < handle
             obj.L_bat = battery_params.L_bat;
             obj.E_bat = battery_params.E_bat;
             obj.DOD = battery_params.DOD;
+            obj.nu_pv = battery_params.nu_pv;
             
             % Initialize noise options
             obj.noise_options = noise_opts;
@@ -317,7 +321,7 @@ classdef EnergyManagementSimulation < handle
             end
             
             % Calculate net power flows using actual values
-            obj.history_mpc.p_net(k) = pv_actual - load_actual;
+            obj.history_mpc.p_net(k) = pv_actual * obj.nu_pv - load_actual;
             obj.history_mpc.p_g_net(k) = obj.history_mpc.p_net(k) - p_b_ch - p_b_dch;
             
             % Calculate actual grid power (not from optimizer)
@@ -357,7 +361,7 @@ classdef EnergyManagementSimulation < handle
             end
             
             % Calculate net power flows using actual values
-            obj.history_simple.p_net(k) = pv_actual - load_actual;
+            obj.history_simple.p_net(k) = pv_actual * obj.nu_pv - load_actual;
             obj.history_simple.p_g_net(k) = obj.history_simple.p_net(k) - p_b_ch - p_b_dch;
             
             % Calculate actual grid power

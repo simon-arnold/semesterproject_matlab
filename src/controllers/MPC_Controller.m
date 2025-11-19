@@ -16,6 +16,9 @@ classdef MPC_Controller < handle
         E_bat       % battery capacity
         DOD         % Depth of Discharge
 
+        % PV System
+        nu_pv       % PV efficiency
+
         % Max Transmission Power
         P_batconv_max
         P_gridcons_max
@@ -27,7 +30,7 @@ classdef MPC_Controller < handle
     methods
         function obj = MPC_Controller(T_pred, N_pred, T_s, R_cost, ...
                                       nu_ch, nu_dch, L_bat, E_bat, ...
-                                      DOD, P_batconv_max, P_gridcons_max)
+                                      DOD, P_batconv_max, P_gridcons_max, nu_pv)
             % Konstruktor: System und MPC Parameter initialisieren
             obj.T_pred = T_pred;
             obj.N_pred = N_pred;
@@ -40,6 +43,7 @@ classdef MPC_Controller < handle
             obj.DOD = DOD;
             obj.P_batconv_max = P_batconv_max;
             obj.P_gridcons_max = P_gridcons_max;
+            obj.nu_pv = nu_pv;
 
             % Optimierungsproblem aufbauen
             obj.constructOptimizationProblem();
@@ -143,8 +147,8 @@ classdef MPC_Controller < handle
 
             
 
-            p_in_current = current_pv - current_load;
-            p_in_forecast = pv_forecast - load_forecast;
+            p_in_current = current_pv * obj.nu_pv - current_load;
+            p_in_forecast = pv_forecast * obj.nu_pv - load_forecast;
 
             p_in = [p_in_current, p_in_forecast]; 
 

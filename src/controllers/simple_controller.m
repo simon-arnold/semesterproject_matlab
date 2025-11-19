@@ -11,6 +11,9 @@ classdef simple_controller < handle
         E_bat       % battery capacity
         DOD         % Depth of Discharge
 
+        % PV System
+        nu_pv       % PV efficiency
+
         % Max Transmission Power
         P_batconv_max
         P_gridcons_max
@@ -18,7 +21,7 @@ classdef simple_controller < handle
     end
     
     methods
-        function obj = simple_controller(T_s, nu_ch, nu_dch, E_bat, DOD, P_batconv_max, P_gridcons_max)
+        function obj = simple_controller(T_s, nu_ch, nu_dch, E_bat, DOD, P_batconv_max, P_gridcons_max, nu_pv)
             % Konstruktor: System und MPC Parameter initialisieren
             obj.T_s = T_s;
             obj.nu_ch = nu_ch;
@@ -27,8 +30,9 @@ classdef simple_controller < handle
             obj.DOD = DOD;
             obj.P_batconv_max = P_batconv_max;
             obj.P_gridcons_max = P_gridcons_max;
+            obj.nu_pv = nu_pv;
 
-            disp('MPC Controller initialized.');
+            disp('Simple Controller initialized.');
         end
         
 
@@ -47,7 +51,7 @@ classdef simple_controller < handle
 
             % TODO:ich glaube es sollte noch ein wirkungsgrad in die lade und entlade leistungs constraints rein
 
-            p_in = pv_current - load_current;
+            p_in = pv_current * obj.nu_pv - load_current;
 
             if p_in > 0
                 % Excess power available for charging
