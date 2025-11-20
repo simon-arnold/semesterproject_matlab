@@ -122,7 +122,13 @@ classdef MPC_Controller < handle
                 % peak_price_horizon_adjusted = obj.peak_price
                 % cost = cost + peak_price_horizon_adjusted * peak_over_forecast_horizon;
 
-                
+                % add minimal reward for filled battery
+                % TODO: how do i tune this epsilon ?
+                epsilon = 1e-10;
+                % epsilon = 0;
+                cost = cost - epsilon * sum(x); 
+
+                % TODO: other cost could be difference between two timesteps of of battery charging & battery discharging power
 
 
                 
