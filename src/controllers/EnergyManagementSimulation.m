@@ -97,7 +97,8 @@ classdef EnergyManagementSimulation < handle
             % Parse optional arguments
             p = inputParser;
             addParameter(p, 'UseNNPredictor', false, @islogical);
-            addParameter(p, 'PredictionHorizon', 24, @(x) ismember(x, [16, 24, 32, 48]));
+            % addParameter(p, 'PredictionHorizon', 24, @(x) ismember(x, [16, 24, 32, 48]));
+            addParameter(p, 'PredictionHorizon', 24, @(x) ismember(x, [16, 24, 32, 48, 16*4, 20*4, 2*48]));
             addParameter(p, 'StartDate', datetime('now'), @(x) isdatetime(x) || ischar(x) || isstring(x));
             addParameter(p, 'EndDate', datetime('now') + days(1), @(x) isdatetime(x) || ischar(x) || isstring(x));
             addParameter(p, 'UseRealData', false, @islogical);
@@ -615,17 +616,17 @@ classdef EnergyManagementSimulation < handle
             features = prepare_predictor_features(obj.real_data_table, start_idx, input_len);
 
             % Print 10 Last timesteps of Load feature for debugging
-            disp('Last 10 timesteps of Load feature for NN predictor (history up to k):');
-            disp(features.Load(end-9:end));
+            % disp('Last 10 timesteps of Load feature for NN predictor (history up to k):');
+            % disp(features.Load(end-9:end));
             
             % Generate forecast
             forecast = obj.nn_predictor.predict(features);
             
-            % Forecast is a vector of length prediction_horizon covering [k+1 ... k+N_pred]
-            if mod(k, 50) == 1  % Only print occasionally to reduce output
-                fprintf('Generated NN forecast for timestep %d (absolute idx: %d), history: [%d...%d], forecast: [%d...%d]\n', ...
-                    k, absolute_k, start_idx, absolute_k, absolute_k+1, absolute_k+length(forecast));
-            end
+            % % Forecast is a vector of length prediction_horizon covering [k+1 ... k+N_pred]
+            % if mod(k, 50) == 1  % Only print occasionally to reduce output
+            %     fprintf('Generated NN forecast for timestep %d (absolute idx: %d), history: [%d...%d], forecast: [%d...%d]\n', ...
+            %         k, absolute_k, start_idx, absolute_k, absolute_k+1, absolute_k+length(forecast));
+            % end
         end
         
         %% Get Forecast Window with NN Predictor
@@ -682,10 +683,10 @@ classdef EnergyManagementSimulation < handle
             % Ensure row vector and convert W to kW
             pv_window = pv_window(:)' / 1000;
 
-            disp('PV Window length:');
-            disp(length(pv_window));
-            disp('Load Window length:');
-            disp(length(load_window));
+            % disp('PV Window length:');
+            % disp(length(pv_window));
+            % disp('Load Window length:');
+            % disp(length(load_window));
 
             % Optional: Add noise if enabled (if you want to test noise on real PV forecast)
             if obj.noise_options.apply_noise
@@ -712,8 +713,8 @@ classdef EnergyManagementSimulation < handle
 
             % Get current battery state
             battery_state = obj.history_mpc.battery_energy(k);
-            disp('battery_state:')
-            disp(battery_state);
+            % disp('battery_state:')
+            % disp(battery_state);
 
             % Get current PV and Load values (absolute index if real data available)
             abs_idx = obj.sim_start_idx + k - 1;
@@ -723,17 +724,17 @@ classdef EnergyManagementSimulation < handle
             % Get current time of day in minutes for cost optimization in MPC
             current_time = obj.real_data_times(abs_idx);
 
-            disp("Current Time:")
-            disp(current_time);
-            disp("Time Hours:")
-            disp(hour(current_time));
-            disp("Time Minutes:")
-            disp(minute(current_time));
+            % disp("Current Time:")
+            % disp(current_time);
+            % disp("Time Hours:")
+            % disp(hour(current_time));
+            % disp("Time Minutes:")
+            % disp(minute(current_time));
 
             current_time_in_minutes = hour(current_time) * 60 + minute(current_time);
 
-            disp("Current Time in Minutes:")
-            disp(current_time_in_minutes);
+            % disp("Current Time in Minutes:")
+            % disp(current_time_in_minutes);
 
             
             % Compute optimal control action
@@ -751,8 +752,8 @@ classdef EnergyManagementSimulation < handle
 
             % error('Debug stop after computing control actions with NN predictor.');
 
-            disp("True Load Forecast")
-            disp(obj.real_data_table.Load(abs_idx+1:abs_idx + obj.N_pred)' / 1000);
+            % disp("True Load Forecast")
+            % disp(obj.real_data_table.Load(abs_idx+1:abs_idx + obj.N_pred)' / 1000);
             
             % Extract first control action
             p_b_ch = p_b_ch_opt(1);
@@ -794,6 +795,88 @@ classdef EnergyManagementSimulation < handle
             end
             
             fprintf('MPC Simulation with NN Predictor completed.\n\n');
+        end
+
+        function calculate_electricity_cost_performance_controllers(obj, electricity_cost_struct, display_costs)
+            % calculate_electricity_cost_performance_controllers Calculate electricity costs for both controllers
+            %
+            % Inputs:
+            %   electricity_cost_struct - Struct with electricity cost parameters
+            %   display_costs - Boolean flag to display costs
+            
+            % Calculate costs for MPC controller
+            total_cost_mpc = obj.calculate_electricity_cost(...
+                obj.history_mpc.p_g_in, ...
+                obj.history_mpc.p_g_out, ...
+                obj.Ts, ...
+                electricity_cost_struct, ...
+                obj.start_date);
+            
+            % Calculate costs for Simple controller
+            total_cost_simple = obj.calculate_electricity_cost(...
+                obj.history_simple.p_g_in, ...
+                obj.history_simple.p_g_out, ...
+                obj.Ts, ...
+                electricity_cost_struct, ...
+                obj.start_date);
+            
+            if display_costs
+                fprintf('Electricity Costs:\n');
+                fprintf('  MPC Controller Total Cost: %.2f CHF\n', total_cost_mpc);
+                fprintf('  Simple Controller Total Cost: %.2f CHF\n', total_cost_simple);
+                fprintf('  Cost Difference (Simple - MPC): %.2f CHF\n\n', total_cost_simple - total_cost_mpc);
+            end
+        end
+
+        function total_cost = calculate_electricity_cost(obj, p_g_in, p_g_out, Ts, electricity_cost_struct, start_time)
+            % calculate_electricity_cost Calculate total electricity cost
+            %
+            % Inputs:
+            %   p_g_in - Grid consumption power (negative values, kW)
+            %   p_g_out - Grid feed-in power (positive values, kW)
+            %   Ts - Sampling time in hours
+            %   electricity_cost_struct - Struct with electricity cost parameters
+            %   start_time - Start time of simulation (datetime or empty for relative time)
+            %
+            % Output:
+            %   total_cost - Total electricity cost in CHF
+            
+            use_electricity_price = electricity_cost_struct.use_electricity_price;
+            high_sell_price = electricity_cost_struct.high_sell_price;
+            high_buy_price = electricity_cost_struct.high_buy_price;
+            low_buy_price = electricity_cost_struct.low_buy_price;
+            low_sell_price = electricity_cost_struct.low_sell_price;
+            peak_price = electricity_cost_struct.peak_price;
+
+            simulation_range_steps = length(p_g_in);
+            total_cost = 0.0;
+
+            % Berechne Startzeit in Minuten seit Mitternacht
+            if nargin >= 6 && ~isempty(start_time) && isdatetime(start_time)
+                start_time_minutes = hour(start_time) * 60 + minute(start_time);
+            else
+                start_time_minutes = 0; % Fallback: Simulation startet um Mitternacht
+            end
+
+            for step = 1:simulation_range_steps
+                % Berechne aktuelle Tageszeit basierend auf echter Startzeit
+                current_time_minutes = mod(start_time_minutes + (step-1) * Ts * 60, 24*60);
+
+                % Bestimme Tarif basierend auf Tageszeit (7:00-20:00 = Hochtarif)
+                if current_time_minutes >= 7*60 && current_time_minutes < 20*60
+                    buy_price = high_buy_price;
+                    sell_price = high_sell_price;
+                else
+                    buy_price = low_buy_price;
+                    sell_price = low_sell_price;
+                end
+
+                % Berechne Kosten für diesen Zeitschritt
+                % Energie (kWh) = Leistung (kW) * Zeit (h)
+                % Kosten (CHF) = Energie (kWh) * Preis (CHF/kWh)
+                cost_step = (-p_g_in(step)) * buy_price * Ts - p_g_out(step) * sell_price * Ts;
+                total_cost = total_cost + cost_step;
+            end
         end
     end
 end

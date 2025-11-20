@@ -171,4 +171,6 @@ calculate_peakshaving_metrics(...
     results_struct.p_g_net_applied_simple, ...
     peakshaving_metrics_options);
 
+sim.calculate_electricity_cost_performance_controllers(electricity_cost_struct, true);
+
 fprintf('\nSimulation completed successfully!\n');

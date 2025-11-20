@@ -112,8 +112,8 @@ classdef MPC_Controller < handle
                 for k = 1:(obj.N_pred + 1)
                     % Verwende zeitabhängige Preise aus den übergebenen Vektoren
                     % Kosten für Netzbezug (p_g_in < 0, daher negativ) und Einspeisung (p_g_in > 0, daher positiv)
-                    % cost = cost + price_buy_vector(k) * (-p_g_in(k)) - price_sell_vector(k) * p_g_out(k);
-                    cost = cost + discount_factor^(k-1) * (price_buy_vector(k) * (-p_g_in(k)) - price_sell_vector(k) * p_g_out(k));
+                    % Wichtig: Mit T_s multiplizieren um Energie (kWh) zu erhalten: Leistung (kW) * Zeit (h) = Energie (kWh)
+                    cost = cost + discount_factor^(k-1) * (price_buy_vector(k) * (-p_g_in(k)) - price_sell_vector(k) * p_g_out(k)) * obj.T_s;
                 end
 
                 % % Add peak price cost (monthly)
@@ -123,8 +123,8 @@ classdef MPC_Controller < handle
                 % cost = cost + peak_price_horizon_adjusted * peak_over_forecast_horizon;
 
                 % add minimal reward for filled battery
-                % TODO: how do i tune this epsilon ?
-                epsilon = 1e-10;
+                % % TODO: how do i tune this epsilon ?
+                epsilon = 1e-9;
                 % epsilon = 0;
                 cost = cost - epsilon * sum(x); 
 
@@ -192,9 +192,9 @@ classdef MPC_Controller < handle
             % Führt die Optimierung aus und gibt die optimalen Steuerinputs zurück
             % current_time_minutes: Aktuelle Tageszeit in Minuten seit Mitternacht (0-1439) (in Minutes)
             
-            disp("current PV: " + num2str(current_pv) + ", current Load: " + num2str(current_load));
-            display("PV Forecast: " + num2str(pv_forecast));
-            display("Load Forecast: " + num2str(load_forecast));
+            % disp("current PV: " + num2str(current_pv) + ", current Load: " + num2str(current_load));
+            % display("PV Forecast: " + num2str(pv_forecast));
+            % display("Load Forecast: " + num2str(load_forecast));
 
             p_in_current = current_pv * obj.nu_pv - current_load;
             p_in_forecast = pv_forecast * obj.nu_pv - load_forecast;
@@ -209,8 +209,8 @@ classdef MPC_Controller < handle
                 % Berechne Zeit für diesen Zeitschritt in Minuten
                 time_minutes = mod(current_time_minutes + (k-1)*obj.T_s*60, 24*60);
                 
-                % Bestimme ob Hoch- oder Niedertarif (Beispiel: Hochtarif 7:00-21:00)
-                if time_minutes >= 7*60 && time_minutes < 21*60
+                % Bestimme ob Hoch- oder Niedertarif (Beispiel: Hochtarif 7:00-20:00)
+                if time_minutes >= 7*60 && time_minutes < 20*60
                     % Hochtarif
                     price_buy_vector(k) = obj.high_buy_price;
                     price_sell_vector(k) = obj.high_sell_price;
@@ -229,7 +229,7 @@ classdef MPC_Controller < handle
             
             [u, diagnostics] = obj.controller{current_battery_energy, p_in, price_buy_vector, price_sell_vector}; 
 
-            disp("u length: " + num2str(length(u)));
+            % disp("u length: " + num2str(length(u)));
             
             % Prüfe Solver-Status
             if diagnostics ~= 0

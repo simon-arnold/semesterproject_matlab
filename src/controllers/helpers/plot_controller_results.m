@@ -4,9 +4,12 @@ function plot_controller_results(correct_load_pv_data, results, model_parameters
 
     % Use actual length of results arrays (in case N_sim was updated)
     actual_N_sim = length(results.p_b_ch_applied_MPC);
+
+    disp("correct_load_pv_data.t length:" + length(correct_load_pv_data.t));
+    disp("actual_N_sim:" + actual_N_sim);
     
-    % Time vector for simulation
-    t_sim = (0:actual_N_sim-1) * options.Ts;
+    % Time vector for simulation (using actual datetime data)
+    t_sim = correct_load_pv_data.t(1:actual_N_sim);
     t_full = (0:options.N_pred-1) * options.Ts;
 
     % Create title suffix based on configuration
@@ -25,21 +28,24 @@ function plot_controller_results(correct_load_pv_data, results, model_parameters
     %% Figure 1: Forecasts over prediction horizon
     figure;
     sgtitle(["PV and Load over testing period"]);
-    subplot(2,1,1);
+    ax1 = subplot(2,1,1);
     plot(correct_load_pv_data.t, correct_load_pv_data.pv, 'LineWidth', 2, 'Color', [1 0.5 0]);
-    xlabel('Time [h]');
+    xlabel('Time');
     ylabel('PV Power [kW]');
     title(['PV Data']);
     grid on;
     xlim([correct_load_pv_data.t(1) correct_load_pv_data.t(end)]);
 
-    subplot(2,1,2);
+    ax2 = subplot(2,1,2);
     plot(correct_load_pv_data.t, correct_load_pv_data.load, 'LineWidth', 2, 'Color', 'blue');
-    xlabel('Time [h]');
+    xlabel('Time');
     ylabel('Load [kW]');
     title(['Load Data']);
     grid on;
     xlim([correct_load_pv_data.t(1) correct_load_pv_data.t(end)]);
+    
+    % Synchronize x-axes
+    linkaxes([ax1, ax2], 'x');
 
 
     % Figure 3: System overview (Battery control, PV production and load with Grid-Net)
@@ -47,56 +53,59 @@ function plot_controller_results(correct_load_pv_data, results, model_parameters
     sgtitle(['MPC Controller Results', title_suffix]);
 
     % Subplot 1: Battery control (Charging/Discharging combined)
-    subplot(4,1,1);
+    ax1 = subplot(4,1,1);
     plot(t_sim, results.p_b_ch_applied_MPC + results.p_b_dch_applied_MPC, 'LineWidth', 2, 'Color', 'red', 'DisplayName', 'Net Battery Control');
-    xlabel('Time [h]');
+    xlabel('Time');
     ylabel('Power [kW]');
     title('Battery Control');
     legend('Location', 'best');
     grid on;
-    xlim([0 max(t_sim)]);
+    xlim([t_sim(1) t_sim(end)]);
     ylim([min(results.p_b_ch_applied_MPC + results.p_b_dch_applied_MPC)*1.1, max(results.p_b_ch_applied_MPC + results.p_b_dch_applied_MPC)*1.1]);
 
     % Subplot 2: PV production
-    subplot(4,1,2);
+    ax2 = subplot(4,1,2);
     % Extract PV data for simulation period
     pv_forecast = correct_load_pv_data.pv(1:actual_N_sim);
     plot(t_sim, pv_forecast, 'LineWidth', 2, 'Color', [1 0.5 0], 'DisplayName', 'PV Production');
-    xlabel('Time [h]');
+    xlabel('Time');
     ylabel('PV Power [kW]');
     title('PV Production');
     legend('Location', 'best');
     grid on;
-    xlim([0 max(t_sim)]);
+    xlim([t_sim(1) t_sim(end)]);
 
     % Subplot 3: Load and Grid-Net-Power
-    subplot(4,1,3);
+    ax3 = subplot(4,1,3);
     % Extract load data for simulation period
     load_forecast = correct_load_pv_data.load(1:actual_N_sim);
     plot(t_sim, load_forecast, 'LineWidth', 2, 'Color', [0.5 0 0.5], 'DisplayName', 'Load');
     hold on;
     plot(t_sim, -results.p_g_net_applied_MPC, 'LineWidth', 2, 'Color', 'blue', 'DisplayName', '-Grid-Net-Power');
     yline(0, 'k--', 'Alpha', 0.5);
-    xlabel('Time [h]');
+    xlabel('Time');
     ylabel('Power [kW]');
     title('Load and Grid-Net-Power (pos=Feed-in, neg=Consumption)');
     legend('Location', 'best');
     grid on;
-    xlim([0 max(t_sim)]);
+    xlim([t_sim(1) t_sim(end)]);
     ylim([min([load_forecast, -results.p_g_net_applied_MPC])*1.1, max([load_forecast, -results.p_g_net_applied_MPC])*1.1]);
 
-    subplot(4,1,4);
-    plot((0:actual_N_sim)*options.Ts, results.battery_energy_sim_MPC/model_parameters.E_bat, 'LineWidth', 2, 'Color', 'black');
+    ax4 = subplot(4,1,4);
+    plot(t_sim, results.battery_energy_sim_MPC(1:actual_N_sim)/model_parameters.E_bat, 'LineWidth', 2, 'Color', 'black');
     hold on;
     yline((1-model_parameters.DOD), '--r', 'LineWidth', 1.5, 'DisplayName', 'Min SOC');
     yline(1.0, '--', 'Color', [0 0.5 0], 'LineWidth', 1.5, 'DisplayName', 'Max SOC');
-    xlabel('Time [h]');
+    xlabel('Time');
     ylabel('[%]');
     title('Battery Energy Evolution (State of Charge)');
     legend('SOC', 'Min SOC', 'Max SOC', 'Location', 'best');
     grid on;
-    xlim([0 max(t_sim)]);
-    ylim([min(results.battery_energy_sim_MPC)*0.9/model_parameters.E_bat, 1.1]);
+    xlim([t_sim(1) t_sim(end)]);
+    ylim([min(results.battery_energy_sim_MPC(1:actual_N_sim))*0.9/model_parameters.E_bat, 1.1]);
+    
+    % Synchronize x-axes
+    linkaxes([ax1, ax2, ax3, ax4], 'x');
 
     % % Figure 4: Receding Horizon Simulation Results
     % figure;
@@ -199,7 +208,7 @@ function plot_controller_results(correct_load_pv_data, results, model_parameters
     figure;
     sgtitle(['MPC Controller Results', title_suffix]);
 
-    subplot(3,1,1);
+    ax1 = subplot(3,1,1);
     hold on;
     area_plot = area(t_sim, area_plot_data_MPC, 'LineStyle', 'none');
     colors = {'blue', 'red'};
@@ -211,42 +220,45 @@ function plot_controller_results(correct_load_pv_data, results, model_parameters
         area_plot(i).DisplayName = names{i};
     end
 
-    xlabel('Time [h]');
+    xlabel('Time');
     ylabel('Power [kW]');
     plot(t_sim, results.p_net_applied_MPC, 'LineWidth', 2, 'Color', [0 153 51]/255, 'DisplayName', 'Net Power (PV-Load)');
     title('Power Flow Distribution: Battery vs. Grid');
     grid on;
     legend('Location', 'best');
-    xlim([0 max(t_sim)]);
+    xlim([t_sim(1) t_sim(end)]);
     ylim([min(results.p_net_applied_MPC)*1.1, max(results.p_net_applied_MPC)*1.1]);
 
-    subplot(3,1,2);
+    ax2 = subplot(3,1,2);
     plot(t_sim, battery_net_MPC, 'LineWidth', 2, 'Color', 'red', 'DisplayName', 'Battery Control');
-    xlabel('Time [h]');
+    xlabel('Time');
     ylabel('Power [kW]');
     title('Battery Control Power');
     grid on;
     legend('Location', 'best');
-    xlim([0 max(t_sim)]);
+    xlim([t_sim(1) t_sim(end)]);
     ylim([min(battery_net_MPC)*1.1, max(battery_net_MPC)*1.1]);
 
-    subplot(3,1,3);
-    plot((0:actual_N_sim)*options.Ts, results.battery_energy_sim_MPC/model_parameters.E_bat, 'LineWidth', 2, 'Color', 'black');
+    ax3 = subplot(3,1,3);
+    plot(t_sim, results.battery_energy_sim_MPC(1:actual_N_sim)/model_parameters.E_bat, 'LineWidth', 2, 'Color', 'black');
     hold on;
     yline((1-model_parameters.DOD), '--r', 'LineWidth', 1.5, 'DisplayName', 'Min SOC');
     yline(1.0, '--', 'Color', [0 0.5 0], 'LineWidth', 1.5, 'DisplayName', 'Max SOC');
-    xlabel('Time [h]');
+    xlabel('Time');
     ylabel('[%]');
     title('Battery Energy Evolution (State of Charge)');
     legend('SOC', 'Min SOC', 'Max SOC', 'Location', 'best');
     grid on;
-    xlim([0 max(t_sim)]);
-    ylim([min(results.battery_energy_sim_MPC)*0.9/model_parameters.E_bat, 1.1]);
+    xlim([t_sim(1) t_sim(end)]);
+    ylim([min(results.battery_energy_sim_MPC(1:actual_N_sim))*0.9/model_parameters.E_bat, 1.1]);
+    
+    % Synchronize x-axes
+    linkaxes([ax1, ax2, ax3], 'x');
 
     figure;
     sgtitle(['MPC Controller Results', title_suffix]);
 
-    subplot(3,1,1);
+    ax1 = subplot(3,1,1);
     hold on;
     area_plot = area(t_sim, area_plot_data_MPC, 'LineStyle', 'none');
     colors = {'blue', 'red'};
@@ -258,37 +270,40 @@ function plot_controller_results(correct_load_pv_data, results, model_parameters
         area_plot(i).DisplayName = names{i};
     end
 
-    xlabel('Time [h]');
+    xlabel('Time');
     ylabel('Power [kW]');
     plot(t_sim, results.p_net_applied_MPC, 'LineWidth', 2, 'Color', [0 153 51]/255, 'DisplayName', 'Net Power (PV-Load)');
     title('Power Flow Distribution: Battery vs. Grid');
     grid on;
     legend('Location', 'best');
-    xlim([0 max(t_sim)]);
+    xlim([t_sim(1) t_sim(end)]);
     ylim([min(results.p_net_applied_MPC)*1.1, max(results.p_net_applied_MPC)*1.1]);
 
-    subplot(3,1,2);
+    ax2 = subplot(3,1,2);
     pv_forecast = correct_load_pv_data.pv(1:actual_N_sim);
     plot(t_sim, pv_forecast, 'LineWidth', 2, 'Color', [1 0.5 0], 'DisplayName', 'PV Production');
-    xlabel('Time [h]');
+    xlabel('Time');
     ylabel('PV Power [kW]');
     title('PV Production');
     legend('Location', 'best');
     grid on;
-    xlim([0 max(t_sim)]);
+    xlim([t_sim(1) t_sim(end)]);
 
-    subplot(3,1,3);
-    plot((0:actual_N_sim)*options.Ts, results.battery_energy_sim_MPC/model_parameters.E_bat, 'LineWidth', 2, 'Color', 'black');
+    ax3 = subplot(3,1,3);
+    plot(t_sim, results.battery_energy_sim_MPC(1:actual_N_sim)/model_parameters.E_bat, 'LineWidth', 2, 'Color', 'black');
     hold on;
     yline((1-model_parameters.DOD), '--r', 'LineWidth', 1.5, 'DisplayName', 'Min SOC');
     yline(1.0, '--', 'Color', [0 0.5 0], 'LineWidth', 1.5, 'DisplayName', 'Max SOC');
-    xlabel('Time [h]');
+    xlabel('Time');
     ylabel('[%]');
     title('Battery Energy Evolution (State of Charge)');
     legend('SOC', 'Min SOC', 'Max SOC', 'Location', 'best');
     grid on;
-    xlim([0 max(t_sim)]);
-    ylim([min(results.battery_energy_sim_MPC)*0.9/model_parameters.E_bat, 1.1]);
+    xlim([t_sim(1) t_sim(end)]);
+    ylim([min(results.battery_energy_sim_MPC(1:actual_N_sim))*0.9/model_parameters.E_bat, 1.1]);
+    
+    % Synchronize x-axes
+    linkaxes([ax1, ax2, ax3], 'x');
 
 
 
@@ -299,56 +314,59 @@ function plot_controller_results(correct_load_pv_data, results, model_parameters
         sgtitle(['Simple Controller Results', title_suffix]);
 
         % Subplot 1: Battery control (Charging/Discharging combined)
-        subplot(4,1,1);
+        ax1 = subplot(4,1,1);
         plot(t_sim, results.p_b_ch_applied_simple + results.p_b_dch_applied_simple, 'LineWidth', 2, 'Color', 'red', 'DisplayName', 'Net Battery Control');
-        xlabel('Time [h]');
+        xlabel('Time');
         ylabel('Power [kW]');
         title('Battery Control');
         legend('Location', 'best');
         grid on;
-        xlim([0 max(t_sim)]);
+        xlim([t_sim(1) t_sim(end)]);
         ylim([min(results.p_b_ch_applied_simple + results.p_b_dch_applied_simple)*1.1, max(results.p_b_ch_applied_simple + results.p_b_dch_applied_simple)*1.1]);
 
         % Subplot 2: PV production
-        subplot(4,1,2);
+        ax2 = subplot(4,1,2);
         % Extract PV data for simulation period
         pv_forecast = correct_load_pv_data.pv(1:actual_N_sim);
         plot(t_sim, pv_forecast, 'LineWidth', 2, 'Color', [1 0.5 0], 'DisplayName', 'PV Production');
-        xlabel('Time [h]');
+        xlabel('Time');
         ylabel('PV Power [kW]');
         title('PV Production');
         legend('Location', 'best');
         grid on;
-        xlim([0 max(t_sim)]);
+        xlim([t_sim(1) t_sim(end)]);
 
         % Subplot 3: Load and Grid-Net-Power
-        subplot(4,1,3);
+        ax3 = subplot(4,1,3);
         % Extract load data for simulation period
         load_forecast = correct_load_pv_data.load(1:actual_N_sim);
         plot(t_sim, load_forecast, 'LineWidth', 2, 'Color', [0.5 0 0.5], 'DisplayName', 'Load');
         hold on;
         plot(t_sim, -results.p_g_net_applied_simple, 'LineWidth', 2, 'Color', 'blue', 'DisplayName', '-Grid-Net-Power');
         yline(0, 'k--', 'Alpha', 0.5);
-        xlabel('Time [h]');
+        xlabel('Time');
         ylabel('Power [kW]');
         title('Load and Grid-Net-Power (pos=Feed-in, neg=Consumption)');
         legend('Location', 'best');
         grid on;
-        xlim([0 max(t_sim)]);
+        xlim([t_sim(1) t_sim(end)]);
         ylim([min([load_forecast, -results.p_g_net_applied_simple])*1.1, max([load_forecast, -results.p_g_net_applied_simple])*1.1]);
 
-        subplot(4,1,4);
-        plot((0:actual_N_sim)*options.Ts, results.battery_energy_sim_simple/model_parameters.E_bat, 'LineWidth', 2, 'Color', 'black');
+        ax4 = subplot(4,1,4);
+        plot(t_sim, results.battery_energy_sim_simple(1:actual_N_sim)/model_parameters.E_bat, 'LineWidth', 2, 'Color', 'black');
         hold on;
         yline((1-model_parameters.DOD), '--r', 'LineWidth', 1.5, 'DisplayName', 'Min SOC');
         yline(1.0, '--', 'Color', [0 0.5 0], 'LineWidth', 1.5, 'DisplayName', 'Max SOC');
-        xlabel('Time [h]');
+        xlabel('Time');
         ylabel('[%]');
         title('Battery Energy Evolution (State of Charge)');
         legend('SOC', 'Min SOC', 'Max SOC', 'Location', 'best');
         grid on;
-        xlim([0 max(t_sim)]);
-        ylim([min(results.battery_energy_sim_simple)*0.9/model_parameters.E_bat, 1.1]);
+        xlim([t_sim(1) t_sim(end)]);
+        ylim([min(results.battery_energy_sim_simple(1:actual_N_sim))*0.9/model_parameters.E_bat, 1.1]);
+        
+        % Synchronize x-axes
+        linkaxes([ax1, ax2, ax3, ax4], 'x');
 
         %Figure 3
         battery_net_simple = results.p_b_ch_applied_simple + results.p_b_dch_applied_simple;
@@ -357,7 +375,7 @@ function plot_controller_results(correct_load_pv_data, results, model_parameters
         figure;
         sgtitle(['Simple Controller Results', title_suffix]);
 
-        subplot(3,1,1);
+        ax1 = subplot(3,1,1);
         hold on;
         area_plot = area(t_sim, area_plot_data_simple, 'LineStyle', 'none');
         colors = {'blue', 'red'};
@@ -369,42 +387,45 @@ function plot_controller_results(correct_load_pv_data, results, model_parameters
             area_plot(i).DisplayName = names{i};
         end
         yline(0, 'k--', 'Alpha', 0.5);
-        xlabel('Time [h]');
+        xlabel('Time');
         ylabel('Power [kW]');
         title('Power Flow Distribution: Battery vs. Grid');
         plot(t_sim, results.p_net_applied_simple, 'LineWidth', 2, 'Color', [0 153 51]/255, 'DisplayName', 'Net Power (PV-Load)');
         grid on;
         legend('Location', 'best');
-        xlim([0 max(t_sim)]);
+        xlim([t_sim(1) t_sim(end)]);
         ylim([min(results.p_net_applied_simple)*1.1, max(results.p_net_applied_simple)*1.1]);
 
-        subplot(3,1,2);
+        ax2 = subplot(3,1,2);
         plot(t_sim, battery_net_simple, 'LineWidth', 2, 'Color', 'red', 'DisplayName', 'Battery Control');
-        xlabel('Time [h]');
+        xlabel('Time');
         ylabel('Power [kW]');
         title('Battery Control Power');
         grid on;
         legend('Location', 'best');
-        xlim([0 max(t_sim)]);
+        xlim([t_sim(1) t_sim(end)]);
         ylim([min(battery_net_simple)*1.1, max(battery_net_simple)*1.1]);
 
-        subplot(3,1,3);
-        plot((0:actual_N_sim)*options.Ts, results.battery_energy_sim_simple/model_parameters.E_bat, 'LineWidth', 2, 'Color', 'black');
+        ax3 = subplot(3,1,3);
+        plot(t_sim, results.battery_energy_sim_simple(1:actual_N_sim)/model_parameters.E_bat, 'LineWidth', 2, 'Color', 'black');
         hold on;
         yline((1-model_parameters.DOD), '--r', 'LineWidth', 1.5, 'DisplayName', 'Min SOC');
         yline(1.0, '--', 'Color', [0 0.5 0], 'LineWidth', 1.5, 'DisplayName', 'Max SOC');
-        xlabel('Time [h]');
+        xlabel('Time');
         ylabel('[%]');
         title('Battery Energy Evolution (State of Charge)');
         legend('SOC', 'Min SOC', 'Max SOC', 'Location', 'best');
         grid on;
-        xlim([0 max(t_sim)]);
-        ylim([min(results.battery_energy_sim_simple)*0.9/model_parameters.E_bat, 1.1]);
+        xlim([t_sim(1) t_sim(end)]);
+        ylim([min(results.battery_energy_sim_simple(1:actual_N_sim))*0.9/model_parameters.E_bat, 1.1]);
+        
+        % Synchronize x-axes
+        linkaxes([ax1, ax2, ax3], 'x');
 
         figure;
         sgtitle(['Simple Controller Results', title_suffix]);
 
-        subplot(3,1,1);
+        ax1 = subplot(3,1,1);
         hold on;
         area_plot = area(t_sim, area_plot_data_simple, 'LineStyle', 'none');
         colors = {'blue', 'red'};
@@ -416,37 +437,40 @@ function plot_controller_results(correct_load_pv_data, results, model_parameters
             area_plot(i).DisplayName = names{i};
         end
         yline(0, 'k--', 'Alpha', 0.5);
-        xlabel('Time [h]');
+        xlabel('Time');
         ylabel('Power [kW]');
         title('Power Flow Distribution: Battery vs. Grid');
         plot(t_sim, results.p_net_applied_simple, 'LineWidth', 2, 'Color', [0 153 51]/255, 'DisplayName', 'Net Power (PV-Load)');
         grid on;
         legend('Location', 'best');
-        xlim([0 max(t_sim)]);
+        xlim([t_sim(1) t_sim(end)]);
         ylim([min(results.p_net_applied_simple)*1.1, max(results.p_net_applied_simple)*1.1]);
 
-        subplot(3,1,2);
+        ax2 = subplot(3,1,2);
         pv_forecast = correct_load_pv_data.pv(1:actual_N_sim);
         plot(t_sim, pv_forecast, 'LineWidth', 2, 'Color', [1 0.5 0], 'DisplayName', 'PV Production');
-        xlabel('Time [h]');
+        xlabel('Time');
         ylabel('PV Power [kW]');
         title('PV Production');
         legend('Location', 'best');
         grid on;
-        xlim([0 max(t_sim)]);
+        xlim([t_sim(1) t_sim(end)]);
 
-        subplot(3,1,3);
-        plot((0:actual_N_sim)*options.Ts, results.battery_energy_sim_simple/model_parameters.E_bat, 'LineWidth', 2, 'Color', 'black');
+        ax3 = subplot(3,1,3);
+        plot(t_sim, results.battery_energy_sim_simple(1:actual_N_sim)/model_parameters.E_bat, 'LineWidth', 2, 'Color', 'black');
         hold on;
         yline((1-model_parameters.DOD), '--r', 'LineWidth', 1.5, 'DisplayName', 'Min SOC');
         yline(1.0, '--', 'Color', [0 0.5 0], 'LineWidth', 1.5, 'DisplayName', 'Max SOC');
-        xlabel('Time [h]');
+        xlabel('Time');
         ylabel('[%]');
         title('Battery Energy Evolution (State of Charge)');
         legend('SOC', 'Min SOC', 'Max SOC', 'Location', 'best');
         grid on;
-        xlim([0 max(t_sim)]);
-        ylim([min(results.battery_energy_sim_simple)*0.9/model_parameters.E_bat, 1.1]);
+        xlim([t_sim(1) t_sim(end)]);
+        ylim([min(results.battery_energy_sim_simple(1:actual_N_sim))*0.9/model_parameters.E_bat, 1.1]);
+        
+        % Synchronize x-axes
+        linkaxes([ax1, ax2, ax3], 'x');
 
     end
 
