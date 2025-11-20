@@ -877,6 +877,13 @@ classdef EnergyManagementSimulation < handle
                 cost_step = (-p_g_in(step)) * buy_price * Ts - p_g_out(step) * sell_price * Ts;
                 total_cost = total_cost + cost_step;
             end
+
+            % Füge Spitzenlastgebühr hinzu, falls aktiviert
+            % TODO: für jeden monat spezifisch zurücksetzen
+            if electricity_cost_struct.use_peak_pricing
+                peak_load = max(-p_g_in); 
+                total_cost = total_cost + peak_load * peak_price * obj.N_sim/(30*24*1/obj.Ts); % Annahme: 30 Tage im Monat
+            end
         end
     end
 end

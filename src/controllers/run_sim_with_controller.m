@@ -19,7 +19,7 @@ N_pred = 48; % Prediction horizon: 24 hours in time steps
 x_initial = 2.5; % Initial battery capacity in kWh (must be > Bat. Cap. * (1-max DOD) kWh)
 
 start_date = datetime(2019, 3, 22, 0, 0, 0); 
-end_date = datetime(2019, 3, 25, 0, 0, 0);   
+end_date = datetime(2019, 4, 25, 0, 0, 0);   
 
 N_sim = ceil(hours(end_date - start_date) / Ts);  
 disp(['Calculated N_sim: ', num2str(N_sim)]);
@@ -42,6 +42,7 @@ R_cost = diag([100, 100, 2000]);
 
 electricity_cost_struct = struct(...
     'use_electricity_price', true, ...
+    'use_peak_pricing', true, ...
     'high_buy_price', 0.2549, ...   % High tariff buy price in CHF/kWh
     'low_buy_price', 0.2209, ...    % Low tariff buy price in CHF/kWh
     'high_sell_price', 0.115, ...  % High tariff sell price in CHF/kWh

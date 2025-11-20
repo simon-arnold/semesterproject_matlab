@@ -21,6 +21,7 @@ classdef MPC_Controller < handle
 
         % Electricity Cost 
         use_electricity_price
+        use_peak_pricing
         high_sell_price
         high_buy_price
         low_buy_price
@@ -57,6 +58,7 @@ classdef MPC_Controller < handle
 
             %Electricity_cost
             obj.use_electricity_price = electricity_cost_struct.use_electricity_price;
+            obj.use_peak_pricing = electricity_cost_struct.use_peak_pricing;
             obj.high_sell_price = electricity_cost_struct.high_sell_price;
             obj.high_buy_price = electricity_cost_struct.high_buy_price;
             obj.low_buy_price = electricity_cost_struct.low_buy_price;
@@ -117,11 +119,11 @@ classdef MPC_Controller < handle
                 end
 
                 % % Add peak price cost (monthly)
-                % peak_over_forecast_horizon = max(p_in);
-                % %peak_price_horizon_adjusted = obj.peak_price * (obj.N_pred * obj.T_s) / (30 * 24); % Adjust peak price to prediction horizon
-                % peak_price_horizon_adjusted = obj.peak_price
-                % cost = cost + peak_price_horizon_adjusted * peak_over_forecast_horizon;
-
+                if obj.use_peak_pricing
+                    max_grid_consumption = -min(p_g_in);
+                    cost = cost + obj.peak_price * max_grid_consumption * obj.T_s * (obj.N_pred + 1) / (24*30); % Approx. monthly factor
+                end
+                
                 % add minimal reward for filled battery
                 % % TODO: how do i tune this epsilon ?
                 epsilon = 1e-9;
