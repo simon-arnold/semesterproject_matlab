@@ -3,7 +3,7 @@ classdef MPC_Controller < handle
         % MPC Parameters
         T_pred      % Prediction Time/horizon
         N_pred      % Prediction Horizon steps
-        T_s         % Sampling Time/delta t
+        T_s         % Sampling Time/delta t [h]
         nx = 1; 
 
         R_cost
@@ -19,6 +19,14 @@ classdef MPC_Controller < handle
         % PV System
         nu_pv       % PV efficiency
 
+        % Electricity Cost 
+        use_electricity_price
+        high_sell_price
+        high_buy_price
+        low_buy_price
+        low_sell_price
+        peak_price
+
         % Max Transmission Power
         P_batconv_max
         P_gridcons_max
@@ -30,10 +38,11 @@ classdef MPC_Controller < handle
     methods
         function obj = MPC_Controller(T_pred, N_pred, T_s, R_cost, ...
                                       nu_ch, nu_dch, L_bat, E_bat, ...
-                                      DOD, P_batconv_max, P_gridcons_max, nu_pv)
+                                      DOD, P_batconv_max, P_gridcons_max, nu_pv, electricity_cost_struct)
             % Konstruktor: System und MPC Parameter initialisieren
             obj.T_pred = T_pred;
             obj.N_pred = N_pred;
+            disp("TS = " + T_s);
             obj.T_s = T_s;
             obj.R_cost = R_cost;
             obj.nu_ch = nu_ch;
@@ -45,6 +54,15 @@ classdef MPC_Controller < handle
             obj.P_gridcons_max = P_gridcons_max;
             obj.nu_pv = nu_pv;
 
+
+            %Electricity_cost
+            obj.use_electricity_price = electricity_cost_struct.use_electricity_price;
+            obj.high_sell_price = electricity_cost_struct.high_sell_price;
+            obj.high_buy_price = electricity_cost_struct.high_buy_price;
+            obj.low_buy_price = electricity_cost_struct.low_buy_price;
+            obj.low_sell_price = electricity_cost_struct.low_sell_price;
+            obj.peak_price = electricity_cost_struct.peak_price;
+
             % Optimierungsproblem aufbauen
             obj.constructOptimizationProblem();
 
@@ -55,7 +73,9 @@ classdef MPC_Controller < handle
             
             % Parameters
             x1 = sdpvar(obj.nx,1);     
-            p_in = sdpvar(1,obj.N_pred + 1);  
+            p_in = sdpvar(1,obj.N_pred + 1);
+            price_buy_vector = sdpvar(1,obj.N_pred + 1);   % Kaufpreise für jeden Zeitschritt
+            price_sell_vector = sdpvar(1,obj.N_pred + 1);  % Verkaufspreise für jeden Zeitschritt
 
             % Optimization Variables - real numbers
             p_g_in = sdpvar(1,obj.N_pred + 1); % TODO: later rewrite power flow balance to get rid of those parameters -> express as function of p_b... -> write constraints as min max or so
@@ -69,30 +89,53 @@ classdef MPC_Controller < handle
             delta_g_in = binvar(1,obj.N_pred + 1);
             delta_g_out = binvar(1,obj.N_pred + 1);
 
-
-            constraints = obj.computeConstraints(x1, p_in, p_g_in, p_g_out, p_b_ch, p_b_dch, delta_b_ch, delta_b_dch, delta_g_in, delta_g_out);
+            
+            [constraints, x] = obj.computeConstraints(x1, p_in, p_g_in, p_g_out, p_b_ch, p_b_dch, delta_b_ch, delta_b_dch, delta_g_in, delta_g_out);
             disp('Constraints formulated.');
-            cost = obj.computeCost(p_in, p_b_ch, p_b_dch, p_g_in);
+            cost = obj.computeCost(p_in, p_b_ch, p_b_dch, p_g_in, p_g_out, price_buy_vector, price_sell_vector, x);
             disp('Cost function formulated.');
 
             solver_settings = sdpsettings('solver','mosek','verbose',1);
 
             obj.controller = optimizer(constraints, cost, solver_settings, ...
-                                       {x1, p_in}, ... % Input parameters
+                                       {x1, p_in, price_buy_vector, price_sell_vector}, ... % Input parameters
                                         {p_b_ch, p_b_dch, p_g_in, p_g_out}); % Output  - of optimization variables
             disp('YALMIP optimizer created.');
 
         end
 
-        function cost = computeCost(obj, p_in, p_b_ch, p_b_dch, p_g_in)
+        function cost = computeCost(obj, p_in, p_b_ch, p_b_dch, p_g_in, p_g_out, price_buy_vector, price_sell_vector, x)
             cost = 0;
-            for k = 1:(obj.N_pred + 1)
-                u = [p_in(k) - p_b_ch(k); p_in(k) - p_b_dch(k); p_g_in(k)];
-                cost = cost + u'*obj.R_cost*u;
+            discount_factor = 1
+
+            if obj.use_electricity_price
+                for k = 1:(obj.N_pred + 1)
+                    % Verwende zeitabhängige Preise aus den übergebenen Vektoren
+                    % Kosten für Netzbezug (p_g_in < 0, daher negativ) und Einspeisung (p_g_in > 0, daher positiv)
+                    % cost = cost + price_buy_vector(k) * (-p_g_in(k)) - price_sell_vector(k) * p_g_out(k);
+                    cost = cost + discount_factor^(k-1) * (price_buy_vector(k) * (-p_g_in(k)) - price_sell_vector(k) * p_g_out(k));
+                end
+
+                % % Add peak price cost (monthly)
+                % peak_over_forecast_horizon = max(p_in);
+                % %peak_price_horizon_adjusted = obj.peak_price * (obj.N_pred * obj.T_s) / (30 * 24); % Adjust peak price to prediction horizon
+                % peak_price_horizon_adjusted = obj.peak_price
+                % cost = cost + peak_price_horizon_adjusted * peak_over_forecast_horizon;
+
+                
+
+
+                
+            else
+                for k = 1:(obj.N_pred + 1)
+                    u = [p_in(k) - p_b_ch(k); p_in(k) - p_b_dch(k); p_g_in(k)];
+                    cost = cost + u'*obj.R_cost*u;
+                end
             end
+            
         end
 
-        function constraints = computeConstraints(obj, x1, p_in, p_g_in, p_g_out, p_b_ch, p_b_dch, delta_b_ch, delta_b_dch, delta_g_in, delta_g_out)
+        function [constraints, x] = computeConstraints(obj, x1, p_in, p_g_in, p_g_out, p_b_ch, p_b_dch, delta_b_ch, delta_b_dch, delta_g_in, delta_g_out)
             constraints = [];
             delta_t = obj.T_s;
             minimal_battery_level = (1 - obj.DOD)*obj.E_bat;
@@ -139,19 +182,38 @@ classdef MPC_Controller < handle
             
         end
 
-        function [p_b_ch_opt, p_b_dch_opt, p_g_in_opt, p_g_out_opt] = computeControlAction(obj, current_battery_energy, current_pv, current_load, pv_forecast, load_forecast)
+        function [p_b_ch_opt, p_b_dch_opt, p_g_in_opt, p_g_out_opt] = computeControlAction(obj, current_battery_energy, current_pv, current_load, pv_forecast, load_forecast, current_time_minutes)
             % Führt die Optimierung aus und gibt die optimalen Steuerinputs zurück
+            % current_time_minutes: Aktuelle Tageszeit in Minuten seit Mitternacht (0-1439) (in Minutes)
+            
             disp("current PV: " + num2str(current_pv) + ", current Load: " + num2str(current_load));
             display("PV Forecast: " + num2str(pv_forecast));
             display("Load Forecast: " + num2str(load_forecast));
 
-            
-
             p_in_current = current_pv * obj.nu_pv - current_load;
             p_in_forecast = pv_forecast * obj.nu_pv - load_forecast;
-
             p_in = [p_in_current, p_in_forecast]; 
 
+            % Berechne zeitabhängige Strompreise für jeden Zeitschritt
+            % Momentan noch die gleichen Hoch und niedertarifszeiten, unabhängig von deem Wochentag
+            price_buy_vector = zeros(1, obj.N_pred + 1);
+            price_sell_vector = zeros(1, obj.N_pred + 1);
+            
+            for k = 1:(obj.N_pred + 1)
+                % Berechne Zeit für diesen Zeitschritt in Minuten
+                time_minutes = mod(current_time_minutes + (k-1)*obj.T_s*60, 24*60);
+                
+                % Bestimme ob Hoch- oder Niedertarif (Beispiel: Hochtarif 7:00-21:00)
+                if time_minutes >= 7*60 && time_minutes < 21*60
+                    % Hochtarif
+                    price_buy_vector(k) = obj.high_buy_price;
+                    price_sell_vector(k) = obj.high_sell_price;
+                else
+                    % Niedertarif
+                    price_buy_vector(k) = obj.low_buy_price;
+                    price_sell_vector(k) = obj.low_sell_price;
+                end
+            end
 
             % Debug-Informationen
             % disp(['Aktuelle Batterieenergie: ', num2str(current_battery_energy)]);
@@ -159,7 +221,7 @@ classdef MPC_Controller < handle
             % disp(['Batteriekapazität: ', num2str(obj.E_bat)]);
             % disp(['Minimaler Batterielevel: ', num2str((1-obj.DOD)*obj.E_bat)]);
             
-            [u, diagnostics] = obj.controller{current_battery_energy, p_in}; 
+            [u, diagnostics] = obj.controller{current_battery_energy, p_in, price_buy_vector, price_sell_vector}; 
 
             disp("u length: " + num2str(length(u)));
             

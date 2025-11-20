@@ -710,13 +710,6 @@ classdef EnergyManagementSimulation < handle
             % Get forecast window using NN predictor
             [pv_window, load_window] = obj.getForecastWindowWithNN(k);  % Convert W to kW
 
-            % disp('pv_window:')
-            % disp(pv_window);
-            % disp('load_window:')
-            % disp(load_window);
-
-            
-            
             % Get current battery state
             battery_state = obj.history_mpc.battery_energy(k);
             disp('battery_state:')
@@ -726,10 +719,26 @@ classdef EnergyManagementSimulation < handle
             abs_idx = obj.sim_start_idx + k - 1;
             pv_current = obj.real_data_table.PV_forecast(abs_idx) / 1000;
             load_current = obj.real_data_table.Load(abs_idx) / 1000;
+
+            % Get current time of day in minutes for cost optimization in MPC
+            current_time = obj.real_data_times(abs_idx);
+
+            disp("Current Time:")
+            disp(current_time);
+            disp("Time Hours:")
+            disp(hour(current_time));
+            disp("Time Minutes:")
+            disp(minute(current_time));
+
+            current_time_in_minutes = hour(current_time) * 60 + minute(current_time);
+
+            disp("Current Time in Minutes:")
+            disp(current_time_in_minutes);
+
             
             % Compute optimal control action
             [p_b_ch_opt, p_b_dch_opt, p_g_in_opt_full, p_g_out_opt_full] = ...
-                obj.mpc_controller.computeControlAction(battery_state, pv_current, load_current, pv_window, load_window);
+                obj.mpc_controller.computeControlAction(battery_state, pv_current, load_current, pv_window, load_window, current_time_in_minutes);
             % disp('Computed optimal control actions:');
             % disp('p_b_ch_opt:');
             % disp(p_b_ch_opt);
