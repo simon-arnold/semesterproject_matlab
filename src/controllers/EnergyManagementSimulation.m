@@ -26,6 +26,8 @@ classdef EnergyManagementSimulation < handle
         end_date                % Simulation end date
         sim_start_idx           % Index in real_data_table where actual simulation starts
         history_length          % Number of historical timesteps before start_date (for NN predictor)
+
+        house_type              % House type ('E' or 'A')
         
         % Simulation parameters
         Ts              % Time step in hours
@@ -78,6 +80,8 @@ classdef EnergyManagementSimulation < handle
             obj.N_pred = sim_params.N_pred;
             obj.N_sim = sim_params.N_sim;
             obj.x_initial = sim_params.x_initial;
+
+            obj.house_type = sim_params.house_type;
             
             % Initialize battery parameters
             obj.nu_ch = battery_params.nu_ch;
@@ -118,7 +122,7 @@ classdef EnergyManagementSimulation < handle
             % Initialize predictor if requested
             if obj.use_nn_predictor
                 fprintf('Initialisiere NNPredictor mit Horizont %d...\n', p.Results.PredictionHorizon);
-                obj.nn_predictor = NNPredictor(p.Results.PredictionHorizon);
+                obj.nn_predictor = NNPredictor(p.Results.PredictionHorizon, obj.house_type);
                 obj.history_length = obj.nn_predictor.input_seq_len;  % Use actual input length from predictor
             else
                 obj.nn_predictor = [];
@@ -132,7 +136,7 @@ classdef EnergyManagementSimulation < handle
             
             % Load real data if requested (this may update N_sim)
             if p.Results.UseRealData
-                obj.loadRealData(obj.start_date, obj.end_date);
+                obj.loadRealData(obj.start_date, obj.end_date, obj.house_type);
             else
                 obj.real_data_table = [];
                 obj.real_data_times = [];
@@ -536,7 +540,7 @@ classdef EnergyManagementSimulation < handle
         end
         
         %% Load Real Data
-        function loadRealData(obj, start_date, end_date)
+        function loadRealData(obj, start_date, end_date, house_type)
             % loadRealData Loads real data from MAT file for simulation
             %
             % Inputs:
@@ -547,7 +551,7 @@ classdef EnergyManagementSimulation < handle
             
             % Use helper function to load data (includes history for NN predictor)
             [obj.real_data_table, obj.real_data_times] = ...
-                load_real_data(start_date, end_date, 'HistoryLength', obj.history_length, 'ForecastLength', obj.N_pred);
+                load_real_data(start_date, end_date, house_type, 'HistoryLength', obj.history_length, 'ForecastLength', obj.N_pred);
 
             disp('Real data table dimensions:');
             disp(size(obj.real_data_table));

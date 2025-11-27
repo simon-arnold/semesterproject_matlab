@@ -16,13 +16,17 @@ N_pred = 48; % Prediction horizon: 24 hours in time steps
 
 
 %N_sim = 48/Ts; % Simulation time: 48 hours in time steps (2 days)
-x_initial = 2.5; % Initial battery capacity in kWh (must be > Bat. Cap. * (1-max DOD) kWh)
+x_initial = 4; % Initial battery capacity in kWh (must be > Bat. Cap. * (1-max DOD) kWh)
 
-start_date = datetime(2019, 3, 22, 0, 0, 0); 
-end_date = datetime(2019, 3, 25, 0, 0, 0);   
+%---------------------House E-----------------------
+% start_date = datetime(2019, 3, 22, 0, 0, 0); 
+% end_date = datetime(2019, 3, 25, 0, 0, 0);   
 
 % start_date = datetime(2019, 4, 1, 0, 0, 0); 
-% end_date = datetime(2019, 5, 1, 0, 0, 0);   
+% end_date = datetime(2019, 5, 1, 0, 0, 0);  
+
+% start_date = datetime(2019, 5, 1, 0, 0, 0); 
+% end_date = datetime(2019, 6, 1, 0, 0, 0);  
 
 % start_date = datetime(2019, 5, 19, 0, 0, 0); 
 % end_date = datetime(2019, 6, 19, 0, 0, 0);
@@ -30,21 +34,57 @@ end_date = datetime(2019, 3, 25, 0, 0, 0);
 % start_date = datetime(2019, 7, 5, 0, 0, 0); 
 % end_date = datetime(2019, 7, 30, 0, 0, 0);      
 
+%---------------------House A-----------------------
+% start_date = datetime(2018, 9, 1, 0, 0, 0); 
+% end_date = datetime(2018, 10, 1, 0, 0, 0);
+
+% start_date = datetime(2018, 8, 17, 0, 0, 0); 
+% end_date = datetime(2018, 9, 17, 0, 0, 0);
+
+start_date = datetime(2018, 9, 17, 0, 0, 0); 
+end_date = datetime(2018, 10, 17, 0, 0, 0);
+
+
 N_sim = ceil(hours(end_date - start_date) / Ts);  
 disp(['Calculated N_sim: ', num2str(N_sim)]);
 
+house_type = 'A_with'; % Set house type to 'E' or 'A_with' or 'A_without' based on the dataset you want to use
+
 
 %% Battery Parameters
-battery_params = struct(...
+battery_params_E = struct(...
     'nu_ch', 0.93, ...          % Charging efficiency
     'nu_dch', 0.93, ...         % Discharging efficiency
     'L_bat', 0, ...             % Battery loss factor
-    'E_bat', 5.100, ...             % Battery capacity in kWh
-    'DOD', 0.6, ...             % Depth of discharge
-    'P_batconv_max', 2000, ... % Maximum battery converter power
+    'E_bat', 5.120, ...             % Battery capacity in kWh
+    'DOD', 0.8, ...             % Depth of discharge
+    'P_batconv_max', 2.200, ... % Maximum battery converter power
     'P_gridcons_max', 30, ...    % Maximum grid consumption power
     'nu_pv', 0.96 ...
 );
+
+battery_params_A = struct(...
+    'nu_ch', 0.93, ...          % Charging efficiency
+    'nu_dch', 0.93, ...         % Discharging efficiency
+    'L_bat', 0, ...             % Battery loss factor
+    'E_bat', 5.120, ...             % Battery capacity in kWh
+    'DOD', 0.8, ...             % Depth of discharge
+    'P_batconv_max', 2.200, ... % Maximum battery converter power
+    'P_gridcons_max', 30, ...    % Maximum grid consumption power
+    'nu_pv', 0.96 ...
+);
+
+switch house_type
+    case 'E'
+        battery_params = battery_params_E;
+        disp('Using battery parameters for House Type E');
+    case {'A_with', 'A_without'}
+        battery_params = battery_params_A;
+        disp('Using battery parameters for House Type A');
+    otherwise
+        error('Invalid house_type: %s. Expected "E", "A_with" or "A_without".', house_type);
+end
+
 
 %% MPC Cost Matrix
 R_cost = diag([100, 100, 2000]);
@@ -116,7 +156,8 @@ sim_params = struct(...
     'N_sim', N_sim, ...
     'x_initial', x_initial, ...
     'mpc_controller', mpc_controller, ...
-    'simple_controller', simple_controller_obj ...
+    'simple_controller', simple_controller_obj, ...
+    'house_type', house_type ...
 );
 
 %% ========================================================================
@@ -135,7 +176,7 @@ fprintf('=================================================================\n\n')
 % Initialize simulation object
 sim = EnergyManagementSimulation(...
     sim_params, battery_params, noise_options, ...
-    'UseNNPredictor', false, ...
+    'UseNNPredictor', true, ...
     'PredictionHorizon', N_pred, ...
     'UseRealData', true, ...
     'StartDate', start_date, ...

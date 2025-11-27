@@ -23,6 +23,7 @@ classdef NNPredictor < handle
         min_vals            % Struct mit Min-Werten
         max_vals            % Struct mit Max-Werten
         input_seq_len       % Länge der Eingabesequenz (192)
+        house_type          % Haus-Typ ('E' oder 'A')
     end
     
     properties (Constant)
@@ -32,7 +33,7 @@ classdef NNPredictor < handle
     end
     
     methods
-        function obj = NNPredictor(prediction_horizon)
+        function obj = NNPredictor(prediction_horizon, house_type)
             % Konstruktor für NNPredictor
             %
             % Eingaben:
@@ -55,6 +56,8 @@ classdef NNPredictor < handle
             obj.prediction_horizon = prediction_horizon;
             obj.input_seq_len = obj.DEFAULT_INPUT_LENGTH;
 
+            obj.house_type = house_type;
+
             % Lade Min/Max-Parameter und die Feature-Liste aus Datei
             obj.loadScalerParams();
 
@@ -63,9 +66,19 @@ classdef NNPredictor < handle
         end
         
         function loadModel(obj)
-            model_path = fullfile('predictor','models','house_E', sprintf('hor_%d', obj.prediction_horizon), 'cnn_lstm_forecaster.onnx');
-            if ~isfile(model_path)
-                error('NNPredictor:ModelNotFound', 'ONNX Modell nicht gefunden: %s', model_path);
+            
+            switch obj.house_type
+                case 'E'
+                    disp('Lade ONNX Modell für Haus Typ E');
+                    model_path = fullfile('predictor','models','house_E', sprintf('hor_%d', obj.prediction_horizon), 'cnn_lstm_forecaster.onnx');
+                case 'A_with'
+                    disp('Lade ONNX Modell für Haus Typ A mit HP');
+                    model_path = fullfile('predictor','models','house_A_with_hp', sprintf('hor_%d', obj.prediction_horizon), 'cnn_lstm_forecaster.onnx');
+                case 'A_without'
+                    disp('Lade ONNX Modell für Haus Typ A ohne HP');
+                    model_path = fullfile('predictor','models','house_A_without_HP', sprintf('hor_%d', obj.prediction_horizon), 'cnn_lstm_forecaster.onnx');
+                otherwise
+                    error('NNPredictor:InvalidHouseType', 'Ungültiger house_type: %s. Erwartet ''E'', ''A_with'' oder ''A_without''.', obj.house_type);
             end
 
             % Einfache, eindeutige Implementierung: benutze importONNXNetwork
@@ -90,7 +103,20 @@ classdef NNPredictor < handle
 
         function loadScalerParams(obj)
             % Lädt Min/Max-Scaler-Parameter aus MAT-Datei (vereinfachte, klare Logik)
-            scaler_path = fullfile('data', 'RAPT Dataset', 'matlab_datasets', 'min_max_scaler_params.mat');
+
+            switch obj.house_type
+                case 'E'
+                    disp('Lade Scaler-Parameter für Haus Typ E');
+                    scaler_path = fullfile('data', 'RAPT Dataset', 'matlab_datasets', 'min_max_E', 'min_max_scaler_params.mat');
+                case 'A_with'
+                    disp('Lade Scaler-Parameter für Haus Typ A mit HP');
+                    scaler_path = fullfile('data', 'RAPT Dataset', 'matlab_datasets', 'min_max_A_with_HP', 'min_max_scaler_params.mat');
+                case 'A_without'
+                    disp('Lade Scaler-Parameter für Haus Typ A ohne HP');
+                    scaler_path = fullfile('data', 'RAPT Dataset', 'matlab_datasets', 'min_max_A_without_HP', 'min_max_scaler_params.mat');
+                otherwise
+                    error('NNPredictor:InvalidHouseType', 'Ungültiger house_type: %s. Erwartet ''E'', ''A_with'' oder ''A_without''.', obj.house_type);
+            end
 
             scaler_mat_file = load(scaler_path);
 

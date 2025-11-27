@@ -49,7 +49,7 @@ function plot_controller_results(correct_load_pv_data, results, model_parameters
 
     %% Figure 2: HEMS Overview - All Power Flows
     figure;
-    sgtitle(['HEMS Power Flow Overview', title_suffix]);
+    sgtitle(['MPC Controller Results', title_suffix]);
     
     % Extract data for simulation period
     pv_forecast = correct_load_pv_data.pv(1:actual_N_sim);
@@ -274,7 +274,7 @@ function plot_controller_results(correct_load_pv_data, results, model_parameters
     xlim([t_sim(1) t_sim(end)]);
 
 
-    ax3 = subplot(3,1,2);
+    ax2 = subplot(3,1,2);
     hold on;
     area_plot = area(t_sim, area_plot_data_MPC, 'LineStyle', 'none');
     colors = {'blue', 'red'};
