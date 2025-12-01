@@ -34,12 +34,17 @@ classdef MPC_Controller < handle
 
         % YALMIP Optimizer
         controller  % Optimizer Object
+
+        % Plotting params for single prediciton horizon plots
+        MPC_plotting_params
+        plotting_k = []
     end
     
     methods
         function obj = MPC_Controller(T_pred, N_pred, T_s, R_cost, ...
                                       nu_ch, nu_dch, L_bat, E_bat, ...
-                                      DOD, P_batconv_max, P_gridcons_max, nu_pv, electricity_cost_struct)
+                                      DOD, P_batconv_max, P_gridcons_max, ...
+                                      nu_pv, electricity_cost_struct, MPC_plotting_params)
             % Konstruktor: System und MPC Parameter initialisieren
             obj.T_pred = T_pred;
             obj.N_pred = N_pred;
@@ -64,6 +69,25 @@ classdef MPC_Controller < handle
             obj.low_buy_price = electricity_cost_struct.low_buy_price;
             obj.low_sell_price = electricity_cost_struct.low_sell_price;
             obj.peak_price = electricity_cost_struct.peak_price;
+
+            % MPC Plotting params
+            obj.MPC_plotting_params = MPC_plotting_params;
+
+            start_date = MPC_plotting_params.start_date;
+            list_of_MPC_horizons = MPC_plotting_params.list_of_MPC_horizons;
+
+            if MPC_plotting_params.num_MPC_horizons ~= length(list_of_MPC_horizons)
+                error('Number of MPC horizons does not match length of list_of_MPC_horizons');
+            end
+
+            
+
+            % Find the index k for plotting
+            for i = 1:MPC_plotting_params.num_MPC_horizons
+                horizon_time = list_of_MPC_horizons(i);
+                k_horizon = round(hours(horizon_time - start_date) / T_s) + 1; % +1 for MATLAB indexing
+                obj.plotting_k = [obj.plotting_k, k_horizon];
+            end
 
             % Optimierungsproblem aufbauen
             obj.constructOptimizationProblem();
@@ -192,13 +216,12 @@ classdef MPC_Controller < handle
             
         end
 
-        function [p_b_ch_opt, p_b_dch_opt, p_g_in_opt, p_g_out_opt] = computeControlAction(obj, current_battery_energy, current_pv, current_load, pv_forecast, load_forecast, current_time_minutes)
+        function [p_b_ch_opt, p_b_dch_opt, p_g_in_opt, p_g_out_opt] = computeControlAction(obj, current_battery_energy, current_pv, current_load, pv_forecast, load_forecast, current_time_minutes, sim_k)
             % Führt die Optimierung aus und gibt die optimalen Steuerinputs zurück
             % current_time_minutes: Aktuelle Tageszeit in Minuten seit Mitternacht (0-1439) (in Minutes)
             
-            % disp("current PV: " + num2str(current_pv) + ", current Load: " + num2str(current_load));
-            % display("PV Forecast: " + num2str(pv_forecast));
-            % display("Load Forecast: " + num2str(load_forecast));
+            pv_curr_predict = [current_pv, pv_forecast];    
+            load_curr_predict = [current_load, load_forecast]; 
 
             p_in_current = current_pv * obj.nu_pv - current_load;
             p_in_forecast = pv_forecast * obj.nu_pv - load_forecast;
@@ -225,11 +248,7 @@ classdef MPC_Controller < handle
                 end
             end
 
-            % Debug-Informationen
-            % disp(['Aktuelle Batterieenergie: ', num2str(current_battery_energy)]);
-            % disp(['Min/Max p_in: ', num2str(min(p_in)), ' / ', num2str(max(p_in))]);
-            % disp(['Batteriekapazität: ', num2str(obj.E_bat)]);
-            % disp(['Minimaler Batterielevel: ', num2str((1-obj.DOD)*obj.E_bat)]);
+
             
             [u, diagnostics] = obj.controller{current_battery_energy, p_in, price_buy_vector, price_sell_vector}; 
 
@@ -254,6 +273,89 @@ classdef MPC_Controller < handle
             p_b_dch_opt = u{2};  % Batterieentladeleistung  
             p_g_in_opt = u{3};   % Netzbezugsleistung
             p_g_out_opt = u{4};  % Netzeinspeiseleistung
+
+            if ismember(sim_k, obj.plotting_k)
+                current_datetime = obj.MPC_plotting_params.list_of_MPC_horizons(find(obj.plotting_k == sim_k));
+                obj.plot_current_prediction_window(sim_k, p_b_ch_opt, p_b_dch_opt, p_g_in_opt, p_g_out_opt, current_battery_energy, u, p_in, load_curr_predict, pv_curr_predict, current_datetime);
+            end
+            
+        end
+
+        function plot_current_prediction_window(obj, k, p_b_ch_opt, p_b_dch_opt, p_g_in_opt, p_g_out_opt, current_battery_energy, u, p_in, load_curr_predict, pv_curr_predict, current_datetime)
+            % Plotte die Ergebnisse der aktuellen Vorhersageperiode über das MPC Prediction Window
+            
+            % Zeitvektor für Prediction Horizon erstellen
+            if obj.MPC_plotting_params.plot_with_current_datetime
+                % Erstelle datetime Array beginnend bei current_datetime
+                t_pred = current_datetime + hours((0:obj.N_pred) * obj.T_s);
+            else
+                % Relative Zeit in Stunden ab aktuellem Zeitpunkt
+                t_pred = (0:obj.N_pred) * obj.T_s;
+            end
+            
+            % Batterieleistung netto (positiv=Laden, negativ=Entladen)
+            battery_net = p_b_ch_opt + p_b_dch_opt;
+            
+            % Netzleistung netto (positiv=Einspeisung, negativ=Bezug)
+            grid_net = p_g_out_opt + p_g_in_opt;
+            
+            % Batteriezustand berechnen (aus u extrahieren falls verfügbar)
+            %TODO: add here the battery state of the Optimizer
+            x_trajectory = [current_battery_energy, zeros(1, obj.N_pred)];
+            for i = 1:obj.N_pred
+                x_trajectory(i+1) = x_trajectory(i) + obj.nu_ch*p_b_ch_opt(i)*obj.T_s + ...
+                                    (1/obj.nu_dch)*p_b_dch_opt(i)*obj.T_s - ...
+                                    obj.L_bat*x_trajectory(i)*obj.T_s;
+            end
+            
+            % Erstelle Figure
+            figure('Name', sprintf('MPC Prediction Window at k=%d', k), 'NumberTitle', 'off');
+            sgtitle(sprintf('MPC Prediction Window at Timestep k=%d', k));
+            
+            % Subplot 1: Eingangssignal p_in (PV - Load)
+            ax1 = subplot(3,1,1);
+            plot(t_pred, pv_curr_predict, 'LineWidth', 2, 'Color', [1 0.6 0], 'DisplayName', 'PV Production');
+            hold on;
+            plot(t_pred, load_curr_predict, 'LineWidth', 2, 'Color', [0.2 0.4 0.8], 'DisplayName', 'Load');
+            plot(t_pred, p_in, 'LineWidth', 2, 'Color', [0.4 0.9 0.4], 'DisplayName', 'Net Power (PV-Load)');
+            xlabel('Time [h]');
+            ylabel('Power [kW]');
+            title('PV Production vs. Load');
+            legend('Location', 'best');
+            grid on;
+            xlim([t_pred(1) t_pred(end)]);
+            
+            % Subplot 2: Optimale Leistungsverteilung (Batterie und Netz)
+            ax2 = subplot(3,1,2);
+            plot(t_pred, battery_net, 'LineWidth', 2.5, 'Color', [0.8 0.2 0.2], 'DisplayName', 'Battery Power');
+            hold on;
+            plot(t_pred, grid_net, 'LineWidth', 2.5, 'Color', [0.2 0.6 0.8], 'DisplayName', 'Grid Power');
+            ylabel('Power [kW]');
+            xlabel('Time [h]');
+            title('Optimal Power Distribution (pos=Charge/Sell, neg=Discharge/Buy)');
+            legend('Location', 'best');
+            grid on;
+            xlim([t_pred(1) t_pred(end)]);
+            
+            % Subplot 3: Batteriezustand (SOC)
+            ax3 = subplot(3,1,3);
+            plot(t_pred, x_trajectory/obj.E_bat * 100, 'LineWidth', 2.5, 'Color', 'black', 'DisplayName', 'Predicted SOC');
+            hold on;
+            yline((1-obj.DOD)*100, '--r', 'LineWidth', 1.5, 'DisplayName', 'Min SOC');
+            yline(100, '--', 'Color', [0 0.5 0], 'LineWidth', 1.5, 'DisplayName', 'Max SOC');
+            xlabel('Time [h]');
+            ylabel('SOC [%]');
+            title('Predicted Battery State of Charge');
+            legend('Location', 'best');
+            grid on;
+            xlim([t_pred(1) t_pred(end)]);
+            ylim([min(x_trajectory/obj.E_bat * 100)*0.95, 105]);
+            
+            % Synchronisiere x-Achsen
+            linkaxes([ax1, ax2, ax3], 'x');
+
+            % error('debug stop'); 
+
         end
     end
 end

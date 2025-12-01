@@ -619,12 +619,19 @@ classdef EnergyManagementSimulation < handle
             % This gives the NN input_len timesteps of history UP TO AND INCLUDING current timestep
             features = prepare_predictor_features(obj.real_data_table, start_idx, input_len);
 
+
             % Print 10 Last timesteps of Load feature for debugging
             % disp('Last 10 timesteps of Load feature for NN predictor (history up to k):');
             % disp(features.Load(end-9:end));
+
+            disp("Last load input_feature value:")
+            disp(features.Load(end));
             
             % Generate forecast
             forecast = obj.nn_predictor.predict(features);
+
+            disp("first forecasted load value:")
+            disp(forecast(1));
             
             % % Forecast is a vector of length prediction_horizon covering [k+1 ... k+N_pred]
             % if mod(k, 50) == 1  % Only print occasionally to reduce output
@@ -749,7 +756,8 @@ classdef EnergyManagementSimulation < handle
             
             % Compute optimal control action
             [p_b_ch_opt, p_b_dch_opt, p_g_in_opt_full, p_g_out_opt_full] = ...
-                obj.mpc_controller.computeControlAction(battery_state, pv_current, load_current, pv_window, load_window, current_time_in_minutes);
+                obj.mpc_controller.computeControlAction(battery_state, pv_current, load_current, pv_window, ...
+                                                        load_window, current_time_in_minutes, k);
             % disp('Computed optimal control actions:');
             % disp('p_b_ch_opt:');
             % disp(p_b_ch_opt);
