@@ -942,16 +942,18 @@ classdef EnergyManagementSimulation < handle
             % hintereinander gereiht: Bei jedem Schritt (mit Abstand = prediction_horizon)
             % wird ein neues Fenster mit den aktuellen realen Daten als Input berechnet.
             %
+            % WICHTIG: Die Prediction bei Zeitschritt k ist für die ZUKUNFT [k+1 ... k+pred_horizon]
+            %
             % Output:
             %   prediction_sequence - Vektor der Länge N_sim mit den NN-Predictions [W]
             %
             % Beispiel:
             %   Wenn N_sim = 100 und prediction_horizon = 24:
-            %   - Bei k=1: Prediction für Zeitschritte 1-24
-            %   - Bei k=25: Prediction für Zeitschritte 25-48
-            %   - Bei k=49: Prediction für Zeitschritte 49-72
-            %   - Bei k=73: Prediction für Zeitschritte 73-96
-            %   - Bei k=97: Prediction für Zeitschritte 97-100 (letztes Window wird abgeschnitten)
+            %   - Bei k=1: Prediction für Zeitschritte 2-25
+            %   - Bei k=25: Prediction für Zeitschritte 26-49
+            %   - Bei k=49: Prediction für Zeitschritte 50-73
+            %   - Bei k=73: Prediction für Zeitschritte 74-97
+            %   - Bei k=97: Prediction für Zeitschritte 98-100 (letztes Window wird abgeschnitten)
             
             if ~obj.use_nn_predictor
                 warning('EnergyManagementSimulation:NoNNPredictor', ...
@@ -967,8 +969,8 @@ classdef EnergyManagementSimulation < handle
                 return;
             end
             
-            % Initialisiere Ausgabe-Sequenz
-            prediction_sequence = zeros(1, obj.N_sim);
+            % Initialisiere Ausgabe-Sequenz mit NaN (erste Werte haben keine Prediction)
+            prediction_sequence = nan(1, obj.N_sim);
             
             % Hole Prediction-Horizont
             pred_horizon = obj.nn_predictor.prediction_horizon;
@@ -983,20 +985,29 @@ classdef EnergyManagementSimulation < handle
             while k <= obj.N_sim
                 window_count = window_count + 1;
                 
-                % Generiere Forecast für dieses Window
+                % Generiere Forecast für dieses Window bei Zeitschritt k
+                % Dieser forecast gilt für [k+1 ... k+pred_horizon]
                 forecast = obj.generateNNForecast(k);  % Gibt pred_horizon Werte zurück [W]
                 
+                % Berechne Start-Index für die Prediction-Einträge (k+1)
+                pred_start_idx = k + 1;
+                
+                % Prüfe ob wir noch im gültigen Bereich sind
+                if pred_start_idx > obj.N_sim
+                    break;  % Keine weiteren Predictions nötig
+                end
+                
                 % Berechne wie viele Werte wir von diesem Window brauchen
-                remaining_steps = obj.N_sim - k + 1;
+                remaining_steps = obj.N_sim - pred_start_idx + 1;
                 steps_to_use = min(pred_horizon, remaining_steps);
                 
-                % Füge die Prediction-Werte in die Sequenz ein
-                prediction_sequence(k : k + steps_to_use - 1) = forecast(1:steps_to_use);
+                % Füge die Prediction-Werte in die Sequenz ein (ab k+1, nicht ab k)
+                prediction_sequence(pred_start_idx : pred_start_idx + steps_to_use - 1) = forecast(1:steps_to_use);
                 
                 % Progress output
                 if mod(window_count, 5) == 0 || k == 1
-                    fprintf('  Window %d: k=%d bis k=%d (verwendet %d von %d Predictions)\n', ...
-                        window_count, k, k + steps_to_use - 1, steps_to_use, pred_horizon);
+                    fprintf('  Window %d: Prediction bei k=%d für Zeitschritte %d bis %d (verwendet %d von %d Predictions)\n', ...
+                        window_count, k, pred_start_idx, pred_start_idx + steps_to_use - 1, steps_to_use, pred_horizon);
                 end
                 
                 % Springe zum nächsten Window
@@ -1005,6 +1016,9 @@ classdef EnergyManagementSimulation < handle
             
             fprintf('Prediction-Sequenz generiert: %d Fenster, %d Werte total.\n\n', ...
                 window_count, obj.N_sim);
+
+            disp('First 10 prediction values:');
+            disp(prediction_sequence(1:10));
         end
 
         function result = getPredictionVsRealLoad(obj)
