@@ -1,4 +1,4 @@
-function plot_controller_results(correct_load_pv_data, results, model_parameters, options )
+function plot_controller_results(correct_load_pv_data, results, prediciton_result, model_parameters, options )
     %TODO: Add description
     %% Plotting the results
 
@@ -28,7 +28,7 @@ function plot_controller_results(correct_load_pv_data, results, model_parameters
     %% Figure 1: Forecasts over prediction horizon
     figure;
     sgtitle(["PV and Load over testing period"]);
-    ax1 = subplot(2,1,1);
+    ax1 = subplot(3,1,1);
     plot(correct_load_pv_data.t, correct_load_pv_data.pv, 'LineWidth', 2, 'Color', [1 0.5 0]);
     xlabel('Time');
     ylabel('PV Power [kW]');
@@ -36,16 +36,24 @@ function plot_controller_results(correct_load_pv_data, results, model_parameters
     grid on;
     xlim([correct_load_pv_data.t(1) correct_load_pv_data.t(end)]);
 
-    ax2 = subplot(2,1,2);
+    ax2 = subplot(3,1,2);
     plot(correct_load_pv_data.t, correct_load_pv_data.load, 'LineWidth', 2, 'Color', 'blue');
     xlabel('Time');
     ylabel('Load [kW]');
     title(['Load Data']);
     grid on;
     xlim([correct_load_pv_data.t(1) correct_load_pv_data.t(end)]);
+
+    ax3 = subplot(3,1,3);
+    plot(prediciton_result.t, prediciton_result.prediction/1000, "LineWidth", 2, 'Color', 'red');
+    xlabel('Time');
+    ylabel('Prediction [kW]');
+    title(['Prediction Sequence']);
+    grid on;
+    xlim([correct_load_pv_data.t(1) correct_load_pv_data.t(end)]);
     
     % Synchronize x-axes
-    linkaxes([ax1, ax2], 'x');
+    linkaxes([ax1, ax2, ax3], 'x');
 
     %% Figure 2: HEMS Overview - All Power Flows
     figure;
@@ -62,6 +70,59 @@ function plot_controller_results(correct_load_pv_data, results, model_parameters
     hold on;
     plot(t_sim, load_forecast, 'LineWidth', 2, 'Color', [0.2 0.4 0.8], 'DisplayName', 'Load');
     plot(t_sim, pv_forecast - load_forecast, 'LineWidth', 2, 'Color', [0.4 0.9 0.4], 'DisplayName', 'Net Power (PV-Load)');
+    xlabel('Time');
+    ylabel('Power [kW]');
+    title('PV Production vs. Load');
+    legend('Location', 'best');
+    grid on;
+    xlim([t_sim(1) t_sim(end)]);
+    
+    % Subplot 2: Power Distribution (Battery and Grid)
+    ax2 = subplot(3,1,2);
+    % yyaxis left
+    plot(t_sim, battery_net_MPC, 'LineWidth', 2.5, 'Color', [0.8 0.2 0.2], 'DisplayName', 'Battery Power');
+    hold on;
+    plot(t_sim, results.p_g_net_applied_MPC, 'LineWidth', 2.5, 'Color', [0.2 0.6 0.8], 'DisplayName', 'Grid Power');
+    ylabel('Power [kW]');
+    ylim([min([results.p_g_net_applied_MPC, battery_net_MPC])*1.2, max([results.p_g_net_applied_MPC, battery_net_MPC])*1.2]);
+    xlabel('Time');
+    title('Battery and Grid Power (pos=Charge/Sell, neg=Discharge/Consumption)');
+    legend('Location', 'best');
+    grid on;
+    xlim([t_sim(1) t_sim(end)]);
+    
+    % Subplot 3: Battery State of Charge
+    ax3 = subplot(3,1,3);
+    plot(t_sim, results.battery_energy_sim_MPC(1:actual_N_sim)/model_parameters.E_bat * 100, 'LineWidth', 2.5, 'Color', 'black');
+    hold on;
+    yline((1-model_parameters.DOD)*100, '--r', 'LineWidth', 1.5, 'DisplayName', 'Min SOC');
+    yline(100, '--', 'Color', [0 0.5 0], 'LineWidth', 1.5, 'DisplayName', 'Max SOC');
+    xlabel('Time');
+    ylabel('SOC [%]');
+    title('Battery State of Charge');
+    legend('SOC', 'Min SOC', 'Max SOC', 'Location', 'best');
+    grid on;
+    xlim([t_sim(1) t_sim(end)]);
+    ylim([min(results.battery_energy_sim_MPC(1:actual_N_sim))*0.9/model_parameters.E_bat * 100, 105]);
+    
+    % Synchronize x-axes
+    linkaxes([ax1, ax2, ax3], 'x');
+
+    %% Figure 2.5: HEMS Overview - All Power Flows
+    figure;
+    sgtitle(['MPC Controller Results', title_suffix]);
+    
+    % Extract data for simulation period
+    pv_forecast = correct_load_pv_data.pv(1:actual_N_sim);
+    load_forecast = correct_load_pv_data.load(1:actual_N_sim);
+    battery_net_MPC = results.p_b_ch_applied_MPC + results.p_b_dch_applied_MPC;
+    
+    % Subplot 1: PV Production and Load
+    ax1 = subplot(3,1,1);
+    plot(t_sim, pv_forecast, 'LineWidth', 2, 'Color', [1 0.6 0], 'DisplayName', 'PV Production');
+    hold on;
+    plot(t_sim, load_forecast, 'LineWidth', 2, 'Color', [0.2 0.4 0.8], 'DisplayName', 'Load');
+    plot(prediciton_result.t, prediciton_result.prediction/1000, "LineWidth", 2, 'Color', 'red', 'DisplayName', 'Prediction (reset 12h)');
     xlabel('Time');
     ylabel('Power [kW]');
     title('PV Production vs. Load');
@@ -254,6 +315,65 @@ function plot_controller_results(correct_load_pv_data, results, model_parameters
     % xlim([0 max(t_sim)]);
 
     %% Figure 3 Area plot, der darstellt wo hin der pv überschuss geh oder vonn wo die zu grosse load kompensiert wird
+    battery_net_MPC = results.p_b_ch_applied_MPC + results.p_b_dch_applied_MPC;
+    area_plot_data_MPC = [results.p_g_net_applied_MPC; battery_net_MPC]';
+
+    figure;
+    sgtitle(['MPC Controller Results', title_suffix]);
+
+    % Subplot 1: PV Production and Load
+    ax1 = subplot(3,1,1);
+    plot(t_sim, pv_forecast, 'LineWidth', 2, 'Color', [1 0.6 0], 'DisplayName', 'PV Production');
+    hold on;
+    plot(t_sim, load_forecast, 'LineWidth', 2, 'Color', [0.2 0.4 0.8], 'DisplayName', 'Load');
+    plot(prediciton_result.t, prediciton_result.prediction/1000, "LineWidth", 2, 'Color', 'red', 'DisplayName', 'Prediction (reset 12h)');
+    xlabel('Time');
+    ylabel('Power [kW]');
+    title('PV Production vs. Load');
+    legend('Location', 'best');
+    grid on;
+    xlim([t_sim(1) t_sim(end)]);
+
+
+    ax2 = subplot(3,1,2);
+    hold on;
+    area_plot = area(t_sim, area_plot_data_MPC, 'LineStyle', 'none');
+    colors = {'blue', 'red'};
+    names = {'Grid Power', 'Battery Power'};
+
+    for i = 1:numel(area_plot)
+        area_plot(i).FaceColor = colors{i};   
+        area_plot(i).EdgeColor = 'none';    
+        area_plot(i).DisplayName = names{i};
+    end
+
+    xlabel('Time');
+    ylabel('Power [kW]');
+    plot(t_sim, results.p_net_applied_MPC, 'LineWidth', 2, 'Color', [0.4 0.9 0.4], 'DisplayName', 'Net Power (PV-Load)');
+    title('Power Flow Distribution: Battery vs. Grid');
+    grid on;
+    legend('Location', 'best');
+    xlim([t_sim(1) t_sim(end)]);
+    ylim([min(results.p_net_applied_MPC)*1.1, max(results.p_net_applied_MPC)*1.1]);
+
+
+    ax3 = subplot(3,1,3);
+    plot(t_sim, results.battery_energy_sim_MPC(1:actual_N_sim)/model_parameters.E_bat, 'LineWidth', 2, 'Color', 'black');
+    hold on;
+    yline((1-model_parameters.DOD), '--r', 'LineWidth', 1.5, 'DisplayName', 'Min SOC');
+    yline(1.0, '--', 'Color', [0 0.5 0], 'LineWidth', 1.5, 'DisplayName', 'Max SOC');
+    xlabel('Time');
+    ylabel('[%]');
+    title('Battery Energy Evolution (State of Charge)');
+    legend('SOC', 'Min SOC', 'Max SOC', 'Location', 'best');
+    grid on;
+    xlim([t_sim(1) t_sim(end)]);
+    ylim([min(results.battery_energy_sim_MPC(1:actual_N_sim))*0.9/model_parameters.E_bat, 1.1]);
+    
+    % Synchronize x-axes
+    linkaxes([ax1, ax2, ax3], 'x');
+
+    %% Figure 3.5 Area plot, der darstellt wo hin der pv überschuss geh oder vonn wo die zu grosse load kompensiert wird
     battery_net_MPC = results.p_b_ch_applied_MPC + results.p_b_dch_applied_MPC;
     area_plot_data_MPC = [results.p_g_net_applied_MPC; battery_net_MPC]';
 

@@ -126,8 +126,9 @@ classdef MPC_Controller < handle
                 
                 % add minimal reward for filled battery
                 % % TODO: how do i tune this epsilon ?
-                % epsilon = 1e-9 works well for house E
-                epsilon = 1e-9;
+                
+                % epsilon = 7e-3;
+                epsilon = 5e-3; % works well for house E
                 % epsilon = 0;
                 cost = cost - epsilon * sum(x); 
 

@@ -28,7 +28,7 @@ classdef NNPredictor < handle
     
     properties (Constant)
         FEATURE_ORDER = {'Year', 'tod_sin', 'tod_cos', 'weekday_sin', ...
-                        'weekday_cos', 'doy_sin', 'doy_cos', 'Load', 'Temperature'};
+                    'weekday_cos', 'doy_sin', 'doy_cos', 'Temperature', 'Load'};
         DEFAULT_INPUT_LENGTH = 2 * 24 * 4;  % 2 Tage * 24 Stunden * 4 (15-min Intervalle)
     end
     
@@ -145,6 +145,8 @@ classdef NNPredictor < handle
             disp(obj.min_vals);
             disp('max_vals:');
             disp(obj.max_vals);
+
+            % error('Debug stop after loading scaler parameters.');
 
         end
         

@@ -1,6 +1,6 @@
 close all
-clc
-clear
+%clc
+%clear
 
 %% ========================================================================
 %  ENERGY MANAGEMENT SIMULATION - Main Script
@@ -16,39 +16,50 @@ N_pred = 48; % Prediction horizon: 24 hours in time steps
 
 
 %N_sim = 48/Ts; % Simulation time: 48 hours in time steps (2 days)
-x_initial = 4; % Initial battery capacity in kWh (must be > Bat. Cap. * (1-max DOD) kWh)
+x_initial = 4.0; % Initial battery capacity in kWh (must be > Bat. Cap. * (1-max DOD) kWh)
 
 %---------------------House E-----------------------
-% start_date = datetime(2019, 3, 22, 0, 0, 0); 
-% end_date = datetime(2019, 3, 25, 0, 0, 0);   
+start_date = datetime(2019, 3, 22, 4, 45, 0); 
+end_date = datetime(2019, 3, 25, 4, 45, 0);   
 
-% start_date = datetime(2019, 4, 1, 0, 0, 0); 
+% start_date = datetime(2019, 4, 8, 0, 0, 0); % Besser als mit failure
 % end_date = datetime(2019, 5, 1, 0, 0, 0);  
 
-% start_date = datetime(2019, 5, 1, 0, 0, 0); 
+% start_date = datetime(2019, 4, 1, 0, 0, 0); % Nicht wirklich besser
+% end_date = datetime(2019, 5, 1, 0, 0, 0);  
+
+% start_date = datetime(2019, 5, 1, 0, 0, 0); % Das ist besser
 % end_date = datetime(2019, 6, 1, 0, 0, 0);  
 
 % start_date = datetime(2019, 5, 19, 0, 0, 0); 
 % end_date = datetime(2019, 6, 19, 0, 0, 0);
 
-% start_date = datetime(2019, 7, 5, 0, 0, 0); 
-% end_date = datetime(2019, 7, 30, 0, 0, 0);      
+% start_date = datetime(2019, 7, 1, 0, 0, 0); % Nicht wirklich besser
+% end_date = datetime(2019, 7, 30, 0, 0, 0);   
+
+% start_date = datetime(2019, 7, 1, 0, 0, 0); % Nicht wirklich besser
+% end_date = datetime(2019, 7, 28, 0, 0, 0);  
 
 %---------------------House A-----------------------
 % start_date = datetime(2018, 9, 1, 0, 0, 0); 
 % end_date = datetime(2018, 10, 1, 0, 0, 0);
 
+% start_date = datetime(2018, 8, 18, 22, 45, 0); 
+% end_date = datetime(2018, 8, 25, 22, 45, 0);
+
 % start_date = datetime(2018, 8, 17, 0, 0, 0); 
 % end_date = datetime(2018, 9, 17, 0, 0, 0);
 
-start_date = datetime(2018, 9, 17, 0, 0, 0); 
-end_date = datetime(2018, 10, 17, 0, 0, 0);
+% start_date = datetime(2018, 9, 17, 0, 0, 0); 
+% end_date = datetime(2018, 10, 17, 0, 0, 0);
 
 
 N_sim = ceil(hours(end_date - start_date) / Ts);  
 disp(['Calculated N_sim: ', num2str(N_sim)]);
 
-house_type = 'A_with'; % Set house type to 'E' or 'A_with' or 'A_without' based on the dataset you want to use
+house_type = 'E'; % Set house type to 'E' or 'A_with' or 'A_without' based on the dataset you want to use
+
+
 
 
 %% Battery Parameters
@@ -56,7 +67,7 @@ battery_params_E = struct(...
     'nu_ch', 0.93, ...          % Charging efficiency
     'nu_dch', 0.93, ...         % Discharging efficiency
     'L_bat', 0, ...             % Battery loss factor
-    'E_bat', 5.120, ...             % Battery capacity in kWh
+    'E_bat', 5.100, ...             % Battery capacity in kWh
     'DOD', 0.8, ...             % Depth of discharge
     'P_batconv_max', 2.200, ... % Maximum battery converter power
     'P_gridcons_max', 30, ...    % Maximum grid consumption power
@@ -67,7 +78,7 @@ battery_params_A = struct(...
     'nu_ch', 0.93, ...          % Charging efficiency
     'nu_dch', 0.93, ...         % Discharging efficiency
     'L_bat', 0, ...             % Battery loss factor
-    'E_bat', 5.120, ...             % Battery capacity in kWh
+    'E_bat', 5.100, ...             % Battery capacity in kWh
     'DOD', 0.8, ...             % Depth of discharge
     'P_batconv_max', 2.200, ... % Maximum battery converter power
     'P_gridcons_max', 30, ...    % Maximum grid consumption power
@@ -208,13 +219,16 @@ fprintf('=================================================================\n');
 Correct_Load_PV_data = sim.getCorrectLoadPV();
 results_struct = sim.getResultsStruct();
 model_parameters = sim.getModelParameters();
+
+prediciton_result = sim.getPredictionVsRealLoad();
+
 disp("Forecasts Struct:");
 disp(Correct_Load_PV_data);
 disp("Results Struct:");
 disp(results_struct);
 
 % Plot results
-plot_controller_results(Correct_Load_PV_data, results_struct, model_parameters, plot_options);
+plot_controller_results(Correct_Load_PV_data, results_struct, prediciton_result, model_parameters, plot_options);
 
 % Calculate and plot peak shaving metrics
 calculate_peakshaving_metrics(...
@@ -225,3 +239,4 @@ calculate_peakshaving_metrics(...
 sim.calculate_electricity_cost_performance_controllers(electricity_cost_struct, true);
 
 fprintf('\nSimulation completed successfully!\n');
+
