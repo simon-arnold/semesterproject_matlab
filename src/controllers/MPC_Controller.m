@@ -152,8 +152,9 @@ classdef MPC_Controller < handle
                 % % TODO: how do i tune this epsilon ?
                 
                 % epsilon = 7e-3;
+                % epsilon = 3e-3; % works well for house A
                 epsilon = 5e-3; % works well for house E
-                % epsilon = 0;
+                % epsilon = 1e-3;
                 cost = cost - epsilon * sum(x); 
 
                 % TODO: other cost could be difference between two timesteps of of battery charging & battery discharging power
@@ -216,7 +217,7 @@ classdef MPC_Controller < handle
             
         end
 
-        function [p_b_ch_opt, p_b_dch_opt, p_g_in_opt, p_g_out_opt] = computeControlAction(obj, current_battery_energy, current_pv, current_load, pv_forecast, load_forecast, current_time_minutes, sim_k)
+        function [p_b_ch_opt, p_b_dch_opt, p_g_in_opt, p_g_out_opt] = computeControlAction(obj, current_battery_energy, current_pv, current_load, pv_forecast, load_forecast, current_time_minutes, sim_k, load_window_ground_truth)
             % Führt die Optimierung aus und gibt die optimalen Steuerinputs zurück
             % current_time_minutes: Aktuelle Tageszeit in Minuten seit Mitternacht (0-1439) (in Minutes)
             
@@ -256,16 +257,10 @@ classdef MPC_Controller < handle
             
             % Prüfe Solver-Status
             if diagnostics ~= 0
-                disp(['Solver-Fehler! Diagnostics code: ', num2str(diagnostics)]);
-                if diagnostics == 1
-                    disp('Problem ist infeasible (keine zulässige Lösung)');
-                elseif diagnostics == 2
-                    disp('Problem ist unbounded');
-                elseif diagnostics == 3
-                    disp('Numerische Probleme');
-                else
-                    disp('Unbekannter Solver-Fehler');
-                end
+               warning ("MPC Solver returned with status: " + num2str(diagnostics));
+               disp(yalmiperror(diagnostics));
+               error('MPC Optimization failed.');
+                
             end
             
             % Extrahiere die einzelnen Datenreihen aus dem cell array
@@ -276,13 +271,23 @@ classdef MPC_Controller < handle
 
             if ismember(sim_k, obj.plotting_k)
                 current_datetime = obj.MPC_plotting_params.list_of_MPC_horizons(find(obj.plotting_k == sim_k));
-                obj.plot_current_prediction_window(sim_k, p_b_ch_opt, p_b_dch_opt, p_g_in_opt, p_g_out_opt, current_battery_energy, u, p_in, load_curr_predict, pv_curr_predict, current_datetime);
+                obj.plot_current_prediction_window(sim_k, p_b_ch_opt, p_b_dch_opt, p_g_in_opt, p_g_out_opt, current_battery_energy, u, p_in, load_curr_predict, pv_curr_predict, current_datetime, load_window_ground_truth);
             end
             
         end
 
-        function plot_current_prediction_window(obj, k, p_b_ch_opt, p_b_dch_opt, p_g_in_opt, p_g_out_opt, current_battery_energy, u, p_in, load_curr_predict, pv_curr_predict, current_datetime)
+        function plot_current_prediction_window(obj, k, p_b_ch_opt, p_b_dch_opt, p_g_in_opt, p_g_out_opt, current_battery_energy, u, p_in, load_curr_predict, pv_curr_predict, current_datetime, load_window_ground_truth)
             % Plotte die Ergebnisse der aktuellen Vorhersageperiode über das MPC Prediction Window
+            disp("Load window ground truth:");
+            disp(load_window_ground_truth);
+            disp("Load current predict(1):");
+            disp(load_curr_predict(1));
+            disp("load window ground truth shape:");
+            disp(size(load_window_ground_truth));
+            disp("load current predict shape:");
+            disp(size(load_curr_predict(1)));
+            % Stelle sicher, dass load_window_ground_truth als Row-Vektor vorliegt
+            load_ground_truth = [load_curr_predict(1), reshape(load_window_ground_truth, 1, [])];
             
             % Zeitvektor für Prediction Horizon erstellen
             if obj.MPC_plotting_params.plot_with_current_datetime
@@ -315,8 +320,9 @@ classdef MPC_Controller < handle
             % Subplot 1: Eingangssignal p_in (PV - Load)
             ax1 = subplot(3,1,1);
             plot(t_pred, pv_curr_predict, 'LineWidth', 2, 'Color', [1 0.6 0], 'DisplayName', 'PV Production');
+            plot(t_pred, load_ground_truth, 'LineWidth', 2, 'Color', [0.2 0.4 0.8], 'LineStyle', '--', 'DisplayName', 'Load Ground Truth');
             hold on;
-            plot(t_pred, load_curr_predict, 'LineWidth', 2, 'Color', [0.2 0.4 0.8], 'DisplayName', 'Load');
+            plot(t_pred, load_curr_predict, 'LineWidth', 2, 'Color', [1 0 0], 'DisplayName', 'Load Predicted');
             plot(t_pred, p_in, 'LineWidth', 2, 'Color', [0.4 0.9 0.4], 'DisplayName', 'Net Power (PV-Load)');
             xlabel('Time [h]');
             ylabel('Power [kW]');

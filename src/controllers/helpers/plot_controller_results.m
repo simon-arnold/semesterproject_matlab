@@ -57,7 +57,7 @@ function plot_controller_results(correct_load_pv_data, results, prediciton_resul
 
     %% Figure 2: HEMS Overview - All Power Flows
     figure;
-    sgtitle(['MPC Controller Results', title_suffix]);
+    sgtitle(['Controller Results', title_suffix]);
     
     % Extract data for simulation period
     pv_forecast = correct_load_pv_data.pv(1:actual_N_sim);
@@ -86,7 +86,7 @@ function plot_controller_results(correct_load_pv_data, results, prediciton_resul
     ylabel('Power [kW]');
     ylim([min([results.p_g_net_applied_MPC, battery_net_MPC])*1.2, max([results.p_g_net_applied_MPC, battery_net_MPC])*1.2]);
     xlabel('Time');
-    title('Battery and Grid Power (pos=Charge/Sell, neg=Discharge/Consumption)');
+    title('MPC Battery and Grid Power (pos=Charge/Sell, neg=Discharge/Import)');
     legend('Location', 'best');
     grid on;
     xlim([t_sim(1) t_sim(end)]);
@@ -95,12 +95,12 @@ function plot_controller_results(correct_load_pv_data, results, prediciton_resul
     ax3 = subplot(3,1,3);
     plot(t_sim, results.battery_energy_sim_MPC(1:actual_N_sim)/model_parameters.E_bat * 100, 'LineWidth', 2.5, 'Color', 'black');
     hold on;
-    yline((1-model_parameters.DOD)*100, '--r', 'LineWidth', 1.5, 'DisplayName', 'Min SOC');
-    yline(100, '--', 'Color', [0 0.5 0], 'LineWidth', 1.5, 'DisplayName', 'Max SOC');
+    yline((1-model_parameters.DOD)*100, '--r', 'LineWidth', 1.5, 'DisplayName', 'Min SOE');
+    yline(100, '--', 'Color', [0 0.5 0], 'LineWidth', 1.5, 'DisplayName', 'Max SOE');
     xlabel('Time');
-    ylabel('SOC [%]');
-    title('Battery State of Charge');
-    legend('SOC', 'Min SOC', 'Max SOC', 'Location', 'best');
+    ylabel('SOE [%]');
+    title('Battery State of Energy');
+    legend('SOE', 'Min SOE', 'Max SOE', 'Location', 'best');
     grid on;
     xlim([t_sim(1) t_sim(end)]);
     ylim([min(results.battery_energy_sim_MPC(1:actual_N_sim))*0.9/model_parameters.E_bat * 100, 105]);
@@ -110,7 +110,7 @@ function plot_controller_results(correct_load_pv_data, results, prediciton_resul
 
     %% Figure 2.5: HEMS Overview - All Power Flows
     figure;
-    sgtitle(['MPC Controller Results', title_suffix]);
+    sgtitle(['Controller Results']);
     
     % Extract data for simulation period
     pv_forecast = correct_load_pv_data.pv(1:actual_N_sim);
@@ -139,7 +139,7 @@ function plot_controller_results(correct_load_pv_data, results, prediciton_resul
     ylabel('Power [kW]');
     ylim([min([results.p_g_net_applied_MPC, battery_net_MPC])*1.2, max([results.p_g_net_applied_MPC, battery_net_MPC])*1.2]);
     xlabel('Time');
-    title('Battery and Grid Power (pos=Charge/Sell, neg=Discharge/Consumption)');
+    title('MPC Battery and Grid Power (pos=Charge/Sell, neg=Discharge/Import)');
     legend('Location', 'best');
     grid on;
     xlim([t_sim(1) t_sim(end)]);
@@ -148,12 +148,12 @@ function plot_controller_results(correct_load_pv_data, results, prediciton_resul
     ax3 = subplot(3,1,3);
     plot(t_sim, results.battery_energy_sim_MPC(1:actual_N_sim)/model_parameters.E_bat * 100, 'LineWidth', 2.5, 'Color', 'black');
     hold on;
-    yline((1-model_parameters.DOD)*100, '--r', 'LineWidth', 1.5, 'DisplayName', 'Min SOC');
-    yline(100, '--', 'Color', [0 0.5 0], 'LineWidth', 1.5, 'DisplayName', 'Max SOC');
+    yline((1-model_parameters.DOD)*100, '--r', 'LineWidth', 1.5, 'DisplayName', 'Min SOE');
+    yline(100, '--', 'Color', [0 0.5 0], 'LineWidth', 1.5, 'DisplayName', 'Max SOE');
     xlabel('Time');
-    ylabel('SOC [%]');
+    ylabel('SOE [%]');
     title('Battery State of Charge');
-    legend('SOC', 'Min SOC', 'Max SOC', 'Location', 'best');
+    legend('SOE', 'Min SOE', 'Max SOE', 'Location', 'best');
     grid on;
     xlim([t_sim(1) t_sim(end)]);
     ylim([min(results.battery_energy_sim_MPC(1:actual_N_sim))*0.9/model_parameters.E_bat * 100, 105]);
@@ -718,6 +718,59 @@ function plot_controller_results(correct_load_pv_data, results, prediciton_resul
         
         % % Synchronize x-axes
         % linkaxes([ax1, ax2, ax3], 'x');
+
+        %% Figure 2.5: HEMS Overview - All Power Flows
+
+        figure;
+        sgtitle(['Controller Results']);
+        
+        % Extract data for simulation period
+        pv_forecast = correct_load_pv_data.pv(1:actual_N_sim);
+        load_forecast = correct_load_pv_data.load(1:actual_N_sim);
+        battery_net_MPC = results.p_b_ch_applied_MPC + results.p_b_dch_applied_MPC;
+        
+        % Subplot 1: PV Production and Load
+        ax1 = subplot(3,1,1);
+        plot(t_sim, pv_forecast, 'LineWidth', 2, 'Color', [1 0.6 0], 'DisplayName', 'PV Production');
+        hold on;
+        plot(t_sim, load_forecast, 'LineWidth', 2, 'Color', [0.2 0.4 0.8], 'DisplayName', 'Load');
+        plot(prediciton_result.t, prediciton_result.prediction/1000, "LineWidth", 2, 'Color', 'red', 'DisplayName', 'Prediction (reset 12h)');
+        xlabel('Time');
+        ylabel('Power [kW]');
+        title('PV Production vs. Load');
+        legend('Location', 'best');
+        grid on;
+        xlim([t_sim(1) t_sim(end)]);
+        
+        % Subplot 2: Power Distribution (Battery and Grid)
+        ax2 = subplot(3,1,2);
+        % yyaxis left
+        plot(t_sim, battery_net_MPC, 'LineWidth', 2.5, 'Color', [0.8 0.2 0.2], 'DisplayName', 'Battery Power MPC');
+        hold on;
+        plot(t_sim, results.p_g_net_applied_MPC, 'LineWidth', 2.5, 'Color', [0.2 0.6 0.8], 'DisplayName', 'Grid Power MPC');
+        ylabel('Power [kW]');
+        ylim([min([results.p_g_net_applied_MPC, battery_net_MPC])*1.2, max([results.p_g_net_applied_MPC, battery_net_MPC])*1.2]);
+        xlabel('Time');
+        title('MPC Battery and Grid Power (pos=Charge/Sell, neg=Discharge/Import)');
+        legend('Location', 'best');
+        grid on;
+        xlim([t_sim(1) t_sim(end)]);
+        
+        ax3 = subplot(3,1,3);
+        % yyaxis left
+        plot(t_sim, battery_net_simple, 'LineWidth', 2.5, 'Color', [0.8 0.2 0.2], 'DisplayName', 'Battery Power Baseline');
+        hold on;
+        plot(t_sim, results.p_g_net_applied_simple, 'LineWidth', 2.5, 'Color', [0.2 0.6 0.8], 'DisplayName', 'Grid Power Baseline');
+        ylabel('Power [kW]');
+        ylim([min([results.p_g_net_applied_simple, battery_net_simple])*1.2, max([results.p_g_net_applied_simple, battery_net_simple])*1.2]);
+        xlabel('Time');
+        title('Baseline Battery and Grid Power (pos=Charge/Sell, neg=Discharge/Import)');
+        legend('Location', 'best');
+        grid on;
+        xlim([t_sim(1) t_sim(end)]);
+        
+        % Synchronize x-axes
+        linkaxes([ax1, ax2, ax3], 'x');
 
     end
 

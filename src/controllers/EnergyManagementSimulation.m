@@ -624,14 +624,14 @@ classdef EnergyManagementSimulation < handle
             % disp('Last 10 timesteps of Load feature for NN predictor (history up to k):');
             % disp(features.Load(end-9:end));
 
-            disp("Last load input_feature value:")
-            disp(features.Load(end));
+            % disp("Last load input_feature value:")
+            % disp(features.Load(end));
             
             % Generate forecast
             forecast = obj.nn_predictor.predict(features);
 
-            disp("first forecasted load value:")
-            disp(forecast(1));
+            % disp("first forecasted load value:")
+            % disp(forecast(1));
             
             % % Forecast is a vector of length prediction_horizon covering [k+1 ... k+N_pred]
             % if mod(k, 50) == 1  % Only print occasionally to reduce output
@@ -641,7 +641,7 @@ classdef EnergyManagementSimulation < handle
         end
         
         %% Get Forecast Window with NN Predictor
-        function [pv_window, load_window] = getForecastWindowWithNN(obj, k)
+        function [pv_window, load_window, load_window_ground_truth] = getForecastWindowWithNN(obj, k)
             % getForecastWindowWithNN Get forecast using NN predictor and real PV data
             %
             % Inputs:
@@ -663,7 +663,8 @@ classdef EnergyManagementSimulation < handle
             else
                 load_window = obj.real_data_table.Load(abs_start:abs_end);
             end
-            
+            load_window_ground_truth = obj.real_data_table.Load(abs_start:abs_end)/1000;
+
             if length(load_window) ~= obj.N_pred
                 error('EnergyManagementSimulation:NNForecastLengthMismatch', ...
                     'Forecast length does not match N_pred. Got %d, expected %d.', ...
@@ -720,7 +721,7 @@ classdef EnergyManagementSimulation < handle
             %   p_g_out_opt - Grid feed-in
             
             % Get forecast window using NN predictor
-            [pv_window, load_window] = obj.getForecastWindowWithNN(k);  % Convert W to kW
+            [pv_window, load_window, load_window_ground_truth] = obj.getForecastWindowWithNN(k);  % Convert W to kW
 
             % disp("forecast window pv")
             % disp(pv_window);
@@ -757,7 +758,7 @@ classdef EnergyManagementSimulation < handle
             % Compute optimal control action
             [p_b_ch_opt, p_b_dch_opt, p_g_in_opt_full, p_g_out_opt_full] = ...
                 obj.mpc_controller.computeControlAction(battery_state, pv_current, load_current, pv_window, ...
-                                                        load_window, current_time_in_minutes, k);
+                                                        load_window, current_time_in_minutes, k, load_window_ground_truth);
             % disp('Computed optimal control actions:');
             % disp('p_b_ch_opt:');
             % disp(p_b_ch_opt);
@@ -827,12 +828,14 @@ classdef EnergyManagementSimulation < handle
             %       .mpc.total_cost     - Gesamtkosten MPC [CHF]
             %       .mpc.energy_cost    - Kosten durch Stromtarife [CHF]
             %       .mpc.peak_cost      - Kosten durch Spitzenlast [CHF]
+            %       .mpc.energy_details - Details zu Energie (Hoch-/Niedertarif)
             %       .simple.total_cost  - Gesamtkosten Simple [CHF]
             %       .simple.energy_cost - Kosten durch Stromtarife [CHF]
             %       .simple.peak_cost   - Kosten durch Spitzenlast [CHF]
+            %       .simple.energy_details - Details zu Energie (Hoch-/Niedertarif)
             
             % Calculate costs for MPC controller
-            [total_cost_mpc, energy_cost_mpc, peak_cost_mpc] = obj.calculate_electricity_cost(...
+            [total_cost_mpc, energy_cost_mpc, peak_cost_mpc, energy_details_mpc] = obj.calculate_electricity_cost(...
                 obj.history_mpc.p_g_in, ...
                 obj.history_mpc.p_g_out, ...
                 obj.Ts, ...
@@ -840,7 +843,7 @@ classdef EnergyManagementSimulation < handle
                 obj.start_date);
             
             % Calculate costs for Simple controller
-            [total_cost_simple, energy_cost_simple, peak_cost_simple] = obj.calculate_electricity_cost(...
+            [total_cost_simple, energy_cost_simple, peak_cost_simple, energy_details_simple] = obj.calculate_electricity_cost(...
                 obj.history_simple.p_g_in, ...
                 obj.history_simple.p_g_out, ...
                 obj.Ts, ...
@@ -852,27 +855,71 @@ classdef EnergyManagementSimulation < handle
             cost_results.mpc = struct(...
                 'total_cost', total_cost_mpc, ...
                 'energy_cost', energy_cost_mpc, ...
-                'peak_cost', peak_cost_mpc);
+                'peak_cost', peak_cost_mpc, ...
+                'energy_details', energy_details_mpc);
             cost_results.simple = struct(...
                 'total_cost', total_cost_simple, ...
                 'energy_cost', energy_cost_simple, ...
-                'peak_cost', peak_cost_simple);
+                'peak_cost', peak_cost_simple, ...
+                'energy_details', energy_details_simple);
             
             if display_costs
-                fprintf('Electricity Costs:\n');
-                fprintf('  MPC Controller:\n');
-                fprintf('    Total Cost:  %.2f CHF\n', total_cost_mpc);
-                fprintf('    Energy Cost: %.2f CHF (Stromtarife)\n', energy_cost_mpc);
-                fprintf('    Peak Cost:   %.2f CHF (Spitzenlast)\n', peak_cost_mpc);
-                fprintf('  Simple Controller:\n');
-                fprintf('    Total Cost:  %.2f CHF\n', total_cost_simple);
-                fprintf('    Energy Cost: %.2f CHF (Stromtarife)\n', energy_cost_simple);
-                fprintf('    Peak Cost:   %.2f CHF (Spitzenlast)\n', peak_cost_simple);
-                fprintf('  Cost Difference (Simple - MPC): %.2f CHF\n\n', total_cost_simple - total_cost_mpc);
+                fprintf('\n');
+                fprintf('═══════════════════════════════════════════════════════════════════════════════════\n');
+                fprintf('                        ELECTRICITY COST ANALYSIS                                  \n');
+                fprintf('═══════════════════════════════════════════════════════════════════════════════════\n');
+                fprintf('\n');
+                
+                % MPC Controller
+                fprintf('─────────────────────────────────────────────────────────────────────────────────\n');
+                fprintf('  MPC CONTROLLER\n');
+                fprintf('─────────────────────────────────────────────────────────────────────────────────\n');
+                fprintf('  %-30s %10.2f kWh   %10.2f CHF\n', 'Hochtarif Bezug:', ...
+                    energy_details_mpc.high_buy_energy, energy_details_mpc.high_buy_cost);
+                fprintf('  %-30s %10.2f kWh   %10.2f CHF\n', 'Niedertarif Bezug:', ...
+                    energy_details_mpc.low_buy_energy, energy_details_mpc.low_buy_cost);
+                fprintf('  %-30s %10.2f kWh   %10.2f CHF\n', 'Hochtarif Einspeisung:', ...
+                    energy_details_mpc.high_sell_energy, energy_details_mpc.high_sell_cost);
+                fprintf('  %-30s %10.2f kWh   %10.2f CHF\n', 'Niedertarif Einspeisung:', ...
+                    energy_details_mpc.low_sell_energy, energy_details_mpc.low_sell_cost);
+                fprintf('  %-41s %10.2f CHF\n', 'Energiekosten (Stromtarife):', energy_cost_mpc);
+                fprintf('  %-41s %10.2f CHF\n', 'Spitzenlastkosten:', peak_cost_mpc);
+                fprintf('  %-41s─────────────\n', '');
+                fprintf('  %-41s %10.2f CHF\n', 'GESAMTKOSTEN:', total_cost_mpc);
+                fprintf('\n');
+                
+                % Simple Controller
+                fprintf('─────────────────────────────────────────────────────────────────────────────────\n');
+                fprintf('  SIMPLE CONTROLLER\n');
+                fprintf('─────────────────────────────────────────────────────────────────────────────────\n');
+                fprintf('  %-30s %10.2f kWh   %10.2f CHF\n', 'Hochtarif Bezug:', ...
+                    energy_details_simple.high_buy_energy, energy_details_simple.high_buy_cost);
+                fprintf('  %-30s %10.2f kWh   %10.2f CHF\n', 'Niedertarif Bezug:', ...
+                    energy_details_simple.low_buy_energy, energy_details_simple.low_buy_cost);
+                fprintf('  %-30s %10.2f kWh   %10.2f CHF\n', 'Hochtarif Einspeisung:', ...
+                    energy_details_simple.high_sell_energy, energy_details_simple.high_sell_cost);
+                fprintf('  %-30s %10.2f kWh   %10.2f CHF\n', 'Niedertarif Einspeisung:', ...
+                    energy_details_simple.low_sell_energy, energy_details_simple.low_sell_cost);
+                fprintf('  %-41s %10.2f CHF\n', 'Energiekosten (Stromtarife):', energy_cost_simple);
+                fprintf('  %-41s %10.2f CHF\n', 'Spitzenlastkosten:', peak_cost_simple);
+                fprintf('  %-41s─────────────\n', '');
+                fprintf('  %-41s %10.2f CHF\n', 'GESAMTKOSTEN:', total_cost_simple);
+                fprintf('\n');
+                
+                % Comparison
+                fprintf('─────────────────────────────────────────────────────────────────────────────────\n');
+                fprintf('  VERGLEICH\n');
+                fprintf('─────────────────────────────────────────────────────────────────────────────────\n');
+                cost_diff = total_cost_simple - total_cost_mpc;
+                savings_percent = (cost_diff / total_cost_simple) * 100;
+                fprintf('  %-41s %10.2f CHF\n', 'Kostendifferenz (Simple - MPC):', cost_diff);
+                fprintf('  %-41s %10.1f %%\n', 'Einsparung durch MPC:', savings_percent);
+                fprintf('═══════════════════════════════════════════════════════════════════════════════════\n');
+                fprintf('\n');
             end
         end
 
-        function [total_cost, energy_cost, peak_cost] = calculate_electricity_cost(obj, p_g_in, p_g_out, Ts, electricity_cost_struct, start_time)
+        function [total_cost, energy_cost, peak_cost, energy_details] = calculate_electricity_cost(obj, p_g_in, p_g_out, Ts, electricity_cost_struct, start_time)
             % calculate_electricity_cost Calculate total electricity cost
             %
             % Inputs:
@@ -886,6 +933,7 @@ classdef EnergyManagementSimulation < handle
             %   total_cost - Gesamtkosten [CHF]
             %   energy_cost - Kosten durch Stromtarife (Kauf/Verkauf) [CHF]
             %   peak_cost - Kosten durch Spitzenlast [CHF]
+            %   energy_details - Struct mit Details zu Energie (Hoch-/Niedertarif)
             
             high_sell_price = electricity_cost_struct.high_sell_price;
             high_buy_price = electricity_cost_struct.high_buy_price;
@@ -895,6 +943,16 @@ classdef EnergyManagementSimulation < handle
 
             simulation_range_steps = length(p_g_in);
             energy_cost = 0.0;
+            
+            % Initialisiere Energie-Details
+            high_buy_energy = 0.0;
+            high_buy_cost = 0.0;
+            low_buy_energy = 0.0;
+            low_buy_cost = 0.0;
+            high_sell_energy = 0.0;
+            high_sell_cost = 0.0;
+            low_sell_energy = 0.0;
+            low_sell_cost = 0.0;
 
             % Berechne Startzeit in Minuten seit Mitternacht
             if nargin >= 6 && ~isempty(start_time) && isdatetime(start_time)
@@ -908,7 +966,9 @@ classdef EnergyManagementSimulation < handle
                 current_time_minutes = mod(start_time_minutes + (step-1) * Ts * 60, 24*60);
 
                 % Bestimme Tarif basierend auf Tageszeit (7:00-20:00 = Hochtarif)
-                if current_time_minutes >= 7*60 && current_time_minutes < 20*60
+                is_high_tariff = (current_time_minutes >= 7*60 && current_time_minutes < 20*60);
+                
+                if is_high_tariff
                     buy_price = high_buy_price;
                     sell_price = high_sell_price;
                 else
@@ -916,10 +976,26 @@ classdef EnergyManagementSimulation < handle
                     sell_price = low_sell_price;
                 end
 
-                % Berechne Kosten für diesen Zeitschritt
+                % Berechne Energie und Kosten für diesen Zeitschritt
                 % Energie (kWh) = Leistung (kW) * Zeit (h)
-                % Kosten (CHF) = Energie (kWh) * Preis (CHF/kWh)
-                cost_step = (-p_g_in(step)) * buy_price * Ts - p_g_out(step) * sell_price * Ts;
+                energy_consumed = (-p_g_in(step)) * Ts;  % kWh (positiv)
+                energy_sold = p_g_out(step) * Ts;        % kWh (positiv)
+                
+                % Akkumuliere Energiemengen nach Tariftyp
+                if is_high_tariff
+                    high_buy_energy = high_buy_energy + energy_consumed;
+                    high_buy_cost = high_buy_cost + energy_consumed * buy_price;
+                    high_sell_energy = high_sell_energy + energy_sold;
+                    high_sell_cost = high_sell_cost + energy_sold * sell_price;
+                else
+                    low_buy_energy = low_buy_energy + energy_consumed;
+                    low_buy_cost = low_buy_cost + energy_consumed * buy_price;
+                    low_sell_energy = low_sell_energy + energy_sold;
+                    low_sell_cost = low_sell_cost + energy_sold * sell_price;
+                end
+
+                % Gesamtkosten für diesen Zeitschritt
+                cost_step = energy_consumed * buy_price - energy_sold * sell_price;
                 energy_cost = energy_cost + cost_step;
             end
 
@@ -927,11 +1003,27 @@ classdef EnergyManagementSimulation < handle
             peak_cost = 0.0;
             if electricity_cost_struct.use_peak_pricing
                 peak_load = max(-p_g_in); 
-                peak_cost = peak_load * peak_price * obj.N_sim/(30*24*1/obj.Ts); % Annahme: 30 Tage im Monat
+
+                if ~electricity_cost_struct.use_constant_price
+                    peak_cost = peak_load * peak_price * obj.N_sim/(30*24*1/obj.Ts); % Annahme: 30 Tage im Monat
+                else
+                    peak_cost = peak_load * peak_price;
+                end
             end
             
             % Gesamtkosten
             total_cost = energy_cost + peak_cost;
+            
+            % Erstelle Energie-Details Struct
+            energy_details = struct(...
+                'high_buy_energy', high_buy_energy, ...
+                'high_buy_cost', high_buy_cost, ...
+                'low_buy_energy', low_buy_energy, ...
+                'low_buy_cost', low_buy_cost, ...
+                'high_sell_energy', high_sell_energy, ...
+                'high_sell_cost', high_sell_cost, ...
+                'low_sell_energy', low_sell_energy, ...
+                'low_sell_cost', low_sell_cost);
         end
 
         function prediction_sequence = generatePredictionSequence(obj)
@@ -1017,8 +1109,8 @@ classdef EnergyManagementSimulation < handle
             fprintf('Prediction-Sequenz generiert: %d Fenster, %d Werte total.\n\n', ...
                 window_count, obj.N_sim);
 
-            disp('First 10 prediction values:');
-            disp(prediction_sequence(1:10));
+            % disp('First 10 prediction values:');
+            % disp(prediction_sequence(1:10));
         end
 
         function result = getPredictionVsRealLoad(obj)
