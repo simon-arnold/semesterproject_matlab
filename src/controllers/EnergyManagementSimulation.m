@@ -45,9 +45,6 @@ classdef EnergyManagementSimulation < handle
         % PV parameters
         nu_pv           % PV efficiency
         
-        % Noise options
-        noise_options
-        
         % History storage for MPC controller
         history_mpc
         
@@ -61,13 +58,12 @@ classdef EnergyManagementSimulation < handle
     
     methods
         %% Constructor
-        function obj = EnergyManagementSimulation(sim_params, battery_params, noise_opts, varargin)
+        function obj = EnergyManagementSimulation(sim_params, battery_params, varargin)
             % Constructor with optional real data support
             %
             % Inputs:
             %   sim_params - Struct with simulation parameters
             %   battery_params - Struct with battery parameters
-            %   noise_opts - Struct with noise options
             %   varargin - Optional name-value pairs:
             %              'UseNNPredictor', true/false - Use neural network predictor
             %              'PredictionHorizon', 16/24/32/48 - Horizon for NN predictor
@@ -91,8 +87,6 @@ classdef EnergyManagementSimulation < handle
             obj.DOD = battery_params.DOD;
             obj.nu_pv = battery_params.nu_pv;
             
-            % Initialize noise options
-            obj.noise_options = noise_opts;
             
             % Initialize controllers
             obj.mpc_controller = sim_params.mpc_controller;
@@ -215,11 +209,6 @@ classdef EnergyManagementSimulation < handle
                 load_window = obj.load_forecast(start_idx:end_idx);
             end
             
-            % Add noise if enabled
-            if obj.noise_options.apply_noise
-                [pv_window, load_window] = add_forecast_noise(...
-                    pv_window, load_window, k, obj.N_pred, obj.Ts, obj.noise_options);
-            end
         end
         
         %% Apply MPC Controller
@@ -700,11 +689,6 @@ classdef EnergyManagementSimulation < handle
             % disp('Load Window length:');
             % disp(length(load_window));
 
-            % Optional: Add noise if enabled (if you want to test noise on real PV forecast)
-            % if obj.noise_options.apply_noise
-            %     [pv_window, load_window] = add_forecast_noise(...
-            %         pv_window, load_window, k, obj.N_pred, obj.Ts, obj.noise_options);
-            % end
         end
         
         %% Apply MPC Controller with NN Predictor

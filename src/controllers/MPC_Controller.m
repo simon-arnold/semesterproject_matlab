@@ -5,8 +5,7 @@ classdef MPC_Controller < handle
         N_pred      % Prediction Horizon steps
         T_s         % Sampling Time/delta t [h]
         nx = 1; 
-
-        R_cost
+      
         
         % System Parameters
         % Battery System
@@ -20,7 +19,6 @@ classdef MPC_Controller < handle
         nu_pv       % PV efficiency
 
         % Electricity Cost 
-        use_electricity_price
         use_peak_pricing
         high_sell_price
         high_buy_price
@@ -41,7 +39,7 @@ classdef MPC_Controller < handle
     end
     
     methods
-        function obj = MPC_Controller(T_pred, N_pred, T_s, R_cost, ...
+        function obj = MPC_Controller(T_pred, N_pred, T_s, ...
                                       nu_ch, nu_dch, L_bat, E_bat, ...
                                       DOD, P_batconv_max, P_gridcons_max, ...
                                       nu_pv, electricity_cost_struct, MPC_plotting_params)
@@ -50,7 +48,6 @@ classdef MPC_Controller < handle
             obj.N_pred = N_pred;
             disp("TS = " + T_s);
             obj.T_s = T_s;
-            obj.R_cost = R_cost;
             obj.nu_ch = nu_ch;
             obj.nu_dch = nu_dch;
             obj.L_bat = L_bat;
@@ -62,7 +59,6 @@ classdef MPC_Controller < handle
 
 
             %Electricity_cost
-            obj.use_electricity_price = electricity_cost_struct.use_electricity_price;
             obj.use_peak_pricing = electricity_cost_struct.use_peak_pricing;
             obj.high_sell_price = electricity_cost_struct.high_sell_price;
             obj.high_buy_price = electricity_cost_struct.high_buy_price;
@@ -134,39 +130,33 @@ classdef MPC_Controller < handle
             cost = 0;
             discount_factor = 1
 
-            if obj.use_electricity_price
-                for k = 1:(obj.N_pred + 1)
-                    % Verwende zeitabhängige Preise aus den übergebenen Vektoren
-                    % Kosten für Netzbezug (p_g_in < 0, daher negativ) und Einspeisung (p_g_in > 0, daher positiv)
-                    % Wichtig: Mit T_s multiplizieren um Energie (kWh) zu erhalten: Leistung (kW) * Zeit (h) = Energie (kWh)
-                    cost = cost + discount_factor^(k-1) * (price_buy_vector(k) * (-p_g_in(k)) - price_sell_vector(k) * p_g_out(k)) * obj.T_s;
-                end
-
-                % % Add peak price cost (monthly)
-                if obj.use_peak_pricing
-                    max_grid_consumption = -min(p_g_in);
-                    cost = cost + obj.peak_price * max_grid_consumption * obj.T_s * (obj.N_pred + 1) / (24*30); % Approx. monthly factor
-                end
-                
-                % add minimal reward for filled battery
-                % % TODO: how do i tune this epsilon ?
-                
-                % epsilon = 7e-3;
-                % epsilon = 3e-3; % works well for house A
-                epsilon = 5e-3; % works well for house E
-                % epsilon = 1e-3;
-                cost = cost - epsilon * sum(x); 
-
-                % TODO: other cost could be difference between two timesteps of of battery charging & battery discharging power
-
-
-                
-            else
-                for k = 1:(obj.N_pred + 1)
-                    u = [p_in(k) - p_b_ch(k); p_in(k) - p_b_dch(k); p_g_in(k)];
-                    cost = cost + u'*obj.R_cost*u;
-                end
+           
+            for k = 1:(obj.N_pred + 1)
+                % Verwende zeitabhängige Preise aus den übergebenen Vektoren
+                % Kosten für Netzbezug (p_g_in < 0, daher negativ) und Einspeisung (p_g_in > 0, daher positiv)
+                % Wichtig: Mit T_s multiplizieren um Energie (kWh) zu erhalten: Leistung (kW) * Zeit (h) = Energie (kWh)
+                cost = cost + discount_factor^(k-1) * (price_buy_vector(k) * (-p_g_in(k)) - price_sell_vector(k) * p_g_out(k)) * obj.T_s;
             end
+
+            % % Add peak price cost (monthly)
+            if obj.use_peak_pricing
+                max_grid_consumption = -min(p_g_in);
+                cost = cost + obj.peak_price * max_grid_consumption * obj.T_s * (obj.N_pred + 1) / (24*30); % Approx. monthly factor
+            end
+            
+            % add minimal reward for filled battery
+            % % TODO: how do i tune this epsilon ?
+            
+            % epsilon = 7e-3;
+            % epsilon = 3e-3; % works well for house A
+            epsilon = 5e-3; % works well for house E
+            % epsilon = 1e-3;
+            cost = cost - epsilon * sum(x); 
+
+            % TODO: other cost could be difference between two timesteps of of battery charging & battery discharging power
+
+
+                
             
         end
 
