@@ -1,5 +1,5 @@
 close all
-clc
+%clc
 clear
 
 %% ========================================================================
@@ -16,29 +16,110 @@ N_pred = 48; % Prediction horizon: 24 hours in time steps
 
 
 %N_sim = 48/Ts; % Simulation time: 48 hours in time steps (2 days)
-x_initial = 2.5; % Initial battery capacity in kWh (must be > Bat. Cap. * (1-max DOD) kWh)
+x_initial = 4.0; % Initial battery capacity in kWh (must be > Bat. Cap. * (1-max DOD) kWh)
 
-start_date = datetime(2019, 3, 22, 0, 0, 0); 
-end_date = datetime(2019, 3, 25, 0, 0, 0);   
+%---------------------House E-----------------------
+% start_date = datetime(2019, 3, 22, 0, 0, 0); 
+% end_date = datetime(2019, 3, 25, 0, 0, 0);   
+
+% start_date = datetime(2019, 4, 8, 0, 0, 0); % Besser als mit failure
+% end_date = datetime(2019, 5, 8, 0, 0, 0);  
+
+% start_date = datetime(2019, 4, 1, 0, 0, 0); % Nicht wirklich besser
+% end_date = datetime(2019, 5, 1, 0, 0, 0);  
+
+% start_date = datetime(2019, 5, 1, 0, 0, 0); % Das ist besser
+% end_date = datetime(2019, 6, 1, 0, 0, 0);  
+
+% start_date = datetime(2019, 5, 19, 0, 0, 0); 
+% end_date = datetime(2019, 6, 19, 0, 0, 0);
+
+% start_date = datetime(2019, 7, 1, 0, 0, 0); % Nicht wirklich besser
+% end_date = datetime(2019, 7, 30, 0, 0, 0);   
+
+% start_date = datetime(2019, 7, 1, 0, 0, 0); % Nicht wirklich besser
+% end_date = datetime(2019, 7, 28, 0, 0, 0);  
+
+%---------------------House A-----------------------
+start_date = datetime(2018, 9, 1, 0, 0, 0); % Nicht gut, aber ganzer monat
+end_date = datetime(2018, 10, 1, 0, 0, 0);
+
+% start_date = datetime(2018, 9, 15, 0, 0, 0); 
+% end_date = datetime(2018, 9, 18, 0, 0, 0);
+
+% start_date = datetime(2018, 8, 18, 22, 45, 0); 
+% end_date = datetime(2018, 8, 25, 22, 45, 0);
+
+% start_date = datetime(2018, 8, 7, 0, 0, 0); %Auch nicht wirklich besser
+% end_date = datetime(2018, 9, 7, 0, 0, 0);
+
+% start_date = datetime(2018, 10, 1, 0, 0, 0); % Better performance - compensation of peak, but also 7 days vacation
+% end_date = datetime(2018, 10, 27, 0, 0, 0);
+
 
 N_sim = ceil(hours(end_date - start_date) / Ts);  
 disp(['Calculated N_sim: ', num2str(N_sim)]);
 
+house_type = 'A_without'; % Set house type to 'E' or 'A_with' or 'A_without' based on the dataset you want to use
+
+%------------------Settings for plotting one MPC over Prediction horizon----------------
+MPC_plotting_params = struct(...
+    'num_MPC_horizons', 2, ...
+    'list_of_MPC_horizons', [datetime(2019, 3, 23, 18, 15, 0), datetime(2018, 9, 17, 8, 0, 0)], ...
+    'start_date', start_date, ...
+    'end_date', end_date,  ...
+    'plot_with_current_datetime', true ... 
+);
+
 
 %% Battery Parameters
-battery_params = struct(...
+battery_params_E = struct(...
     'nu_ch', 0.93, ...          % Charging efficiency
     'nu_dch', 0.93, ...         % Discharging efficiency
     'L_bat', 0, ...             % Battery loss factor
     'E_bat', 5.100, ...             % Battery capacity in kWh
-    'DOD', 0.6, ...             % Depth of discharge
-    'P_batconv_max', 2000, ... % Maximum battery converter power
+    'DOD', 0.8, ...             % Depth of discharge
+    'P_batconv_max', 2.200, ... % Maximum battery converter power
     'P_gridcons_max', 30, ...    % Maximum grid consumption power
     'nu_pv', 0.96 ...
 );
 
+battery_params_A = struct(...
+    'nu_ch', 0.93, ...          % Charging efficiency
+    'nu_dch', 0.93, ...         % Discharging efficiency
+    'L_bat', 0, ...             % Battery loss factor
+    'E_bat', 5.1, ...             % Battery capacity in kWh
+    'DOD', 0.9, ...             % Depth of discharge
+    'P_batconv_max', 2.200, ... % Maximum battery converter power
+    'P_gridcons_max', 30, ...    % Maximum grid consumption power
+    'nu_pv', 0.96 ...
+);
+
+switch house_type
+    case 'E'
+        battery_params = battery_params_E;
+        disp('Using battery parameters for House Type E');
+    case {'A_with', 'A_without'}
+        battery_params = battery_params_A;
+        disp('Using battery parameters for House Type A');
+    otherwise
+        error('Invalid house_type: %s. Expected "E", "A_with" or "A_without".', house_type);
+end
+
+
 %% MPC Cost Matrix
 R_cost = diag([100, 100, 2000]);
+
+electricity_cost_struct = struct(...
+    'use_electricity_price', true, ...
+    'use_peak_pricing', true, ...
+    'high_buy_price', 0.2549, ...   % High tariff buy price in CHF/kWh
+    'low_buy_price', 0.2209, ...    % Low tariff buy price in CHF/kWh
+    'high_sell_price', 0.115, ...  % High tariff sell price in CHF/kWh
+    'low_sell_price', 0.088, ...   % Low tariff sell price in CHF/kWh
+    'peak_price', 7.51, ...        % Peak price in CHF/Month/kWh
+    'use_constant_price', true ...
+);
 
 %% Noise Options
 noise_options = struct(...
@@ -81,7 +162,8 @@ mpc_controller = MPC_Controller(...
     battery_params.nu_ch, battery_params.nu_dch, ...
     battery_params.L_bat, battery_params.E_bat, ...
     battery_params.DOD, battery_params.P_batconv_max, ...
-    battery_params.P_gridcons_max, battery_params.nu_pv);
+    battery_params.P_gridcons_max, battery_params.nu_pv, ...
+    electricity_cost_struct, MPC_plotting_params);
 
 simple_controller_obj = simple_controller(...
     Ts, battery_params.nu_ch, battery_params.nu_dch, ...
@@ -96,7 +178,8 @@ sim_params = struct(...
     'N_sim', N_sim, ...
     'x_initial', x_initial, ...
     'mpc_controller', mpc_controller, ...
-    'simple_controller', simple_controller_obj ...
+    'simple_controller', simple_controller_obj, ...
+    'house_type', house_type ...
 );
 
 %% ========================================================================
@@ -115,7 +198,7 @@ fprintf('=================================================================\n\n')
 % Initialize simulation object
 sim = EnergyManagementSimulation(...
     sim_params, battery_params, noise_options, ...
-    'UseNNPredictor', true, ...
+    'UseNNPredictor', false, ...
     'PredictionHorizon', N_pred, ...
     'UseRealData', true, ...
     'StartDate', start_date, ...
@@ -147,18 +230,24 @@ fprintf('=================================================================\n');
 Correct_Load_PV_data = sim.getCorrectLoadPV();
 results_struct = sim.getResultsStruct();
 model_parameters = sim.getModelParameters();
+
+prediciton_result = sim.getPredictionVsRealLoad();
+
 disp("Forecasts Struct:");
 disp(Correct_Load_PV_data);
 disp("Results Struct:");
 disp(results_struct);
 
 % Plot results
-plot_controller_results(Correct_Load_PV_data, results_struct, model_parameters, plot_options);
+plot_controller_results(Correct_Load_PV_data, results_struct, prediciton_result, model_parameters, plot_options);
 
 % Calculate and plot peak shaving metrics
-calculate_peakshaving_metrics(...
-    results_struct.p_g_net_applied_MPC, ...
-    results_struct.p_g_net_applied_simple, ...
-    peakshaving_metrics_options);
+% calculate_peakshaving_metrics(...
+%     results_struct.p_g_net_applied_MPC, ...
+%     results_struct.p_g_net_applied_simple, ...
+%     peakshaving_metrics_options);
+
+sim.calculate_electricity_cost_performance_controllers(electricity_cost_struct, true);
 
 fprintf('\nSimulation completed successfully!\n');
+

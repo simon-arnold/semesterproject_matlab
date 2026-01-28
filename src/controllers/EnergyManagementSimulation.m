@@ -26,6 +26,8 @@ classdef EnergyManagementSimulation < handle
         end_date                % Simulation end date
         sim_start_idx           % Index in real_data_table where actual simulation starts
         history_length          % Number of historical timesteps before start_date (for NN predictor)
+
+        house_type              % House type ('E' or 'A')
         
         % Simulation parameters
         Ts              % Time step in hours
@@ -78,6 +80,8 @@ classdef EnergyManagementSimulation < handle
             obj.N_pred = sim_params.N_pred;
             obj.N_sim = sim_params.N_sim;
             obj.x_initial = sim_params.x_initial;
+
+            obj.house_type = sim_params.house_type;
             
             % Initialize battery parameters
             obj.nu_ch = battery_params.nu_ch;
@@ -97,7 +101,8 @@ classdef EnergyManagementSimulation < handle
             % Parse optional arguments
             p = inputParser;
             addParameter(p, 'UseNNPredictor', false, @islogical);
-            addParameter(p, 'PredictionHorizon', 24, @(x) ismember(x, [16, 24, 32, 48]));
+            % addParameter(p, 'PredictionHorizon', 24, @(x) ismember(x, [16, 24, 32, 48]));
+            addParameter(p, 'PredictionHorizon', 24, @(x) ismember(x, [16, 24, 32, 48, 16*4, 20*4, 2*48]));
             addParameter(p, 'StartDate', datetime('now'), @(x) isdatetime(x) || ischar(x) || isstring(x));
             addParameter(p, 'EndDate', datetime('now') + days(1), @(x) isdatetime(x) || ischar(x) || isstring(x));
             addParameter(p, 'UseRealData', false, @islogical);
@@ -117,7 +122,7 @@ classdef EnergyManagementSimulation < handle
             % Initialize predictor if requested
             if obj.use_nn_predictor
                 fprintf('Initialisiere NNPredictor mit Horizont %d...\n', p.Results.PredictionHorizon);
-                obj.nn_predictor = NNPredictor(p.Results.PredictionHorizon);
+                obj.nn_predictor = NNPredictor(p.Results.PredictionHorizon, obj.house_type);
                 obj.history_length = obj.nn_predictor.input_seq_len;  % Use actual input length from predictor
             else
                 obj.nn_predictor = [];
@@ -131,7 +136,7 @@ classdef EnergyManagementSimulation < handle
             
             % Load real data if requested (this may update N_sim)
             if p.Results.UseRealData
-                obj.loadRealData(obj.start_date, obj.end_date);
+                obj.loadRealData(obj.start_date, obj.end_date, obj.house_type);
             else
                 obj.real_data_table = [];
                 obj.real_data_times = [];
@@ -535,7 +540,7 @@ classdef EnergyManagementSimulation < handle
         end
         
         %% Load Real Data
-        function loadRealData(obj, start_date, end_date)
+        function loadRealData(obj, start_date, end_date, house_type)
             % loadRealData Loads real data from MAT file for simulation
             %
             % Inputs:
@@ -546,7 +551,7 @@ classdef EnergyManagementSimulation < handle
             
             % Use helper function to load data (includes history for NN predictor)
             [obj.real_data_table, obj.real_data_times] = ...
-                load_real_data(start_date, end_date, 'HistoryLength', obj.history_length, 'ForecastLength', obj.N_pred);
+                load_real_data(start_date, end_date, house_type, 'HistoryLength', obj.history_length, 'ForecastLength', obj.N_pred);
 
             disp('Real data table dimensions:');
             disp(size(obj.real_data_table));
@@ -614,22 +619,29 @@ classdef EnergyManagementSimulation < handle
             % This gives the NN input_len timesteps of history UP TO AND INCLUDING current timestep
             features = prepare_predictor_features(obj.real_data_table, start_idx, input_len);
 
+
             % Print 10 Last timesteps of Load feature for debugging
-            disp('Last 10 timesteps of Load feature for NN predictor (history up to k):');
-            disp(features.Load(end-9:end));
+            % disp('Last 10 timesteps of Load feature for NN predictor (history up to k):');
+            % disp(features.Load(end-9:end));
+
+            % disp("Last load input_feature value:")
+            % disp(features.Load(end));
             
             % Generate forecast
             forecast = obj.nn_predictor.predict(features);
+
+            % disp("first forecasted load value:")
+            % disp(forecast(1));
             
-            % Forecast is a vector of length prediction_horizon covering [k+1 ... k+N_pred]
-            if mod(k, 50) == 1  % Only print occasionally to reduce output
-                fprintf('Generated NN forecast for timestep %d (absolute idx: %d), history: [%d...%d], forecast: [%d...%d]\n', ...
-                    k, absolute_k, start_idx, absolute_k, absolute_k+1, absolute_k+length(forecast));
-            end
+            % % Forecast is a vector of length prediction_horizon covering [k+1 ... k+N_pred]
+            % if mod(k, 50) == 1  % Only print occasionally to reduce output
+            %     fprintf('Generated NN forecast for timestep %d (absolute idx: %d), history: [%d...%d], forecast: [%d...%d]\n', ...
+            %         k, absolute_k, start_idx, absolute_k, absolute_k+1, absolute_k+length(forecast));
+            % end
         end
         
         %% Get Forecast Window with NN Predictor
-        function [pv_window, load_window] = getForecastWindowWithNN(obj, k)
+        function [pv_window, load_window, load_window_ground_truth] = getForecastWindowWithNN(obj, k)
             % getForecastWindowWithNN Get forecast using NN predictor and real PV data
             %
             % Inputs:
@@ -651,7 +663,8 @@ classdef EnergyManagementSimulation < handle
             else
                 load_window = obj.real_data_table.Load(abs_start:abs_end);
             end
-            
+            load_window_ground_truth = obj.real_data_table.Load(abs_start:abs_end)/1000;
+
             if length(load_window) ~= obj.N_pred
                 error('EnergyManagementSimulation:NNForecastLengthMismatch', ...
                     'Forecast length does not match N_pred. Got %d, expected %d.', ...
@@ -682,16 +695,16 @@ classdef EnergyManagementSimulation < handle
             % Ensure row vector and convert W to kW
             pv_window = pv_window(:)' / 1000;
 
-            disp('PV Window length:');
-            disp(length(pv_window));
-            disp('Load Window length:');
-            disp(length(load_window));
+            % disp('PV Window length:');
+            % disp(length(pv_window));
+            % disp('Load Window length:');
+            % disp(length(load_window));
 
             % Optional: Add noise if enabled (if you want to test noise on real PV forecast)
-            if obj.noise_options.apply_noise
-                [pv_window, load_window] = add_forecast_noise(...
-                    pv_window, load_window, k, obj.N_pred, obj.Ts, obj.noise_options);
-            end
+            % if obj.noise_options.apply_noise
+            %     [pv_window, load_window] = add_forecast_noise(...
+            %         pv_window, load_window, k, obj.N_pred, obj.Ts, obj.noise_options);
+            % end
         end
         
         %% Apply MPC Controller with NN Predictor
@@ -708,28 +721,44 @@ classdef EnergyManagementSimulation < handle
             %   p_g_out_opt - Grid feed-in
             
             % Get forecast window using NN predictor
-            [pv_window, load_window] = obj.getForecastWindowWithNN(k);  % Convert W to kW
+            [pv_window, load_window, load_window_ground_truth] = obj.getForecastWindowWithNN(k);  % Convert W to kW
 
-            % disp('pv_window:')
+            % disp("forecast window pv")
             % disp(pv_window);
-            % disp('load_window:')
+            % disp("forecast window load")
             % disp(load_window);
+            % error('Debug stop after getting forecast window with NN predictor.');
 
-            
-            
             % Get current battery state
             battery_state = obj.history_mpc.battery_energy(k);
-            disp('battery_state:')
-            disp(battery_state);
+            % disp('battery_state:')
+            % disp(battery_state);
 
             % Get current PV and Load values (absolute index if real data available)
             abs_idx = obj.sim_start_idx + k - 1;
             pv_current = obj.real_data_table.PV_forecast(abs_idx) / 1000;
             load_current = obj.real_data_table.Load(abs_idx) / 1000;
+
+            % Get current time of day in minutes for cost optimization in MPC
+            current_time = obj.real_data_times(abs_idx);
+
+            % disp("Current Time:")
+            % disp(current_time);
+            % disp("Time Hours:")
+            % disp(hour(current_time));
+            % disp("Time Minutes:")
+            % disp(minute(current_time));
+
+            current_time_in_minutes = hour(current_time) * 60 + minute(current_time);
+
+            % disp("Current Time in Minutes:")
+            % disp(current_time_in_minutes);
+
             
             % Compute optimal control action
             [p_b_ch_opt, p_b_dch_opt, p_g_in_opt_full, p_g_out_opt_full] = ...
-                obj.mpc_controller.computeControlAction(battery_state, pv_current, load_current, pv_window, load_window);
+                obj.mpc_controller.computeControlAction(battery_state, pv_current, load_current, pv_window, ...
+                                                        load_window, current_time_in_minutes, k, load_window_ground_truth);
             % disp('Computed optimal control actions:');
             % disp('p_b_ch_opt:');
             % disp(p_b_ch_opt);
@@ -742,8 +771,8 @@ classdef EnergyManagementSimulation < handle
 
             % error('Debug stop after computing control actions with NN predictor.');
 
-            disp("True Load Forecast")
-            disp(obj.real_data_table.Load(abs_idx+1:abs_idx + obj.N_pred)' / 1000);
+            % disp("True Load Forecast")
+            % disp(obj.real_data_table.Load(abs_idx+1:abs_idx + obj.N_pred)' / 1000);
             
             % Extract first control action
             p_b_ch = p_b_ch_opt(1);
@@ -785,6 +814,330 @@ classdef EnergyManagementSimulation < handle
             end
             
             fprintf('MPC Simulation with NN Predictor completed.\n\n');
+        end
+
+        function cost_results = calculate_electricity_cost_performance_controllers(obj, electricity_cost_struct, display_costs)
+            % calculate_electricity_cost_performance_controllers Calculate electricity costs for both controllers
+            %
+            % Inputs:
+            %   electricity_cost_struct - Struct with electricity cost parameters
+            %   display_costs - Boolean flag to display costs
+            %
+            % Output:
+            %   cost_results - Struct mit Kostenaufschlüsselung für beide Controller:
+            %       .mpc.total_cost     - Gesamtkosten MPC [CHF]
+            %       .mpc.energy_cost    - Kosten durch Stromtarife [CHF]
+            %       .mpc.peak_cost      - Kosten durch Spitzenlast [CHF]
+            %       .mpc.energy_details - Details zu Energie (Hoch-/Niedertarif)
+            %       .simple.total_cost  - Gesamtkosten Simple [CHF]
+            %       .simple.energy_cost - Kosten durch Stromtarife [CHF]
+            %       .simple.peak_cost   - Kosten durch Spitzenlast [CHF]
+            %       .simple.energy_details - Details zu Energie (Hoch-/Niedertarif)
+            
+            % Calculate costs for MPC controller
+            [total_cost_mpc, energy_cost_mpc, peak_cost_mpc, energy_details_mpc] = obj.calculate_electricity_cost(...
+                obj.history_mpc.p_g_in, ...
+                obj.history_mpc.p_g_out, ...
+                obj.Ts, ...
+                electricity_cost_struct, ...
+                obj.start_date);
+            
+            % Calculate costs for Simple controller
+            [total_cost_simple, energy_cost_simple, peak_cost_simple, energy_details_simple] = obj.calculate_electricity_cost(...
+                obj.history_simple.p_g_in, ...
+                obj.history_simple.p_g_out, ...
+                obj.Ts, ...
+                electricity_cost_struct, ...
+                obj.start_date);
+            
+            % Erstelle Ausgabe-Struct
+            cost_results = struct();
+            cost_results.mpc = struct(...
+                'total_cost', total_cost_mpc, ...
+                'energy_cost', energy_cost_mpc, ...
+                'peak_cost', peak_cost_mpc, ...
+                'energy_details', energy_details_mpc);
+            cost_results.simple = struct(...
+                'total_cost', total_cost_simple, ...
+                'energy_cost', energy_cost_simple, ...
+                'peak_cost', peak_cost_simple, ...
+                'energy_details', energy_details_simple);
+            
+            if display_costs
+                fprintf('\n');
+                fprintf('═══════════════════════════════════════════════════════════════════════════════════\n');
+                fprintf('                        ELECTRICITY COST ANALYSIS                                  \n');
+                fprintf('═══════════════════════════════════════════════════════════════════════════════════\n');
+                fprintf('\n');
+                
+                % MPC Controller
+                fprintf('─────────────────────────────────────────────────────────────────────────────────\n');
+                fprintf('  MPC CONTROLLER\n');
+                fprintf('─────────────────────────────────────────────────────────────────────────────────\n');
+                fprintf('  %-30s %10.2f kWh   %10.2f CHF\n', 'Hochtarif Bezug:', ...
+                    energy_details_mpc.high_buy_energy, energy_details_mpc.high_buy_cost);
+                fprintf('  %-30s %10.2f kWh   %10.2f CHF\n', 'Niedertarif Bezug:', ...
+                    energy_details_mpc.low_buy_energy, energy_details_mpc.low_buy_cost);
+                fprintf('  %-30s %10.2f kWh   %10.2f CHF\n', 'Hochtarif Einspeisung:', ...
+                    energy_details_mpc.high_sell_energy, energy_details_mpc.high_sell_cost);
+                fprintf('  %-30s %10.2f kWh   %10.2f CHF\n', 'Niedertarif Einspeisung:', ...
+                    energy_details_mpc.low_sell_energy, energy_details_mpc.low_sell_cost);
+                fprintf('  %-41s %10.2f CHF\n', 'Energiekosten (Stromtarife):', energy_cost_mpc);
+                fprintf('  %-41s %10.2f CHF\n', 'Spitzenlastkosten:', peak_cost_mpc);
+                fprintf('  %-41s─────────────\n', '');
+                fprintf('  %-41s %10.2f CHF\n', 'GESAMTKOSTEN:', total_cost_mpc);
+                fprintf('\n');
+                
+                % Simple Controller
+                fprintf('─────────────────────────────────────────────────────────────────────────────────\n');
+                fprintf('  SIMPLE CONTROLLER\n');
+                fprintf('─────────────────────────────────────────────────────────────────────────────────\n');
+                fprintf('  %-30s %10.2f kWh   %10.2f CHF\n', 'Hochtarif Bezug:', ...
+                    energy_details_simple.high_buy_energy, energy_details_simple.high_buy_cost);
+                fprintf('  %-30s %10.2f kWh   %10.2f CHF\n', 'Niedertarif Bezug:', ...
+                    energy_details_simple.low_buy_energy, energy_details_simple.low_buy_cost);
+                fprintf('  %-30s %10.2f kWh   %10.2f CHF\n', 'Hochtarif Einspeisung:', ...
+                    energy_details_simple.high_sell_energy, energy_details_simple.high_sell_cost);
+                fprintf('  %-30s %10.2f kWh   %10.2f CHF\n', 'Niedertarif Einspeisung:', ...
+                    energy_details_simple.low_sell_energy, energy_details_simple.low_sell_cost);
+                fprintf('  %-41s %10.2f CHF\n', 'Energiekosten (Stromtarife):', energy_cost_simple);
+                fprintf('  %-41s %10.2f CHF\n', 'Spitzenlastkosten:', peak_cost_simple);
+                fprintf('  %-41s─────────────\n', '');
+                fprintf('  %-41s %10.2f CHF\n', 'GESAMTKOSTEN:', total_cost_simple);
+                fprintf('\n');
+                
+                % Comparison
+                fprintf('─────────────────────────────────────────────────────────────────────────────────\n');
+                fprintf('  VERGLEICH\n');
+                fprintf('─────────────────────────────────────────────────────────────────────────────────\n');
+                cost_diff = total_cost_simple - total_cost_mpc;
+                savings_percent = (cost_diff / total_cost_simple) * 100;
+                fprintf('  %-41s %10.2f CHF\n', 'Kostendifferenz (Simple - MPC):', cost_diff);
+                fprintf('  %-41s %10.1f %%\n', 'Einsparung durch MPC:', savings_percent);
+                fprintf('═══════════════════════════════════════════════════════════════════════════════════\n');
+                fprintf('\n');
+            end
+        end
+
+        function [total_cost, energy_cost, peak_cost, energy_details] = calculate_electricity_cost(obj, p_g_in, p_g_out, Ts, electricity_cost_struct, start_time)
+            % calculate_electricity_cost Calculate total electricity cost
+            %
+            % Inputs:
+            %   p_g_in - Grid consumption power (negative values, kW)
+            %   p_g_out - Grid feed-in power (positive values, kW)
+            %   Ts - Sampling time in hours
+            %   electricity_cost_struct - Struct with electricity cost parameters
+            %   start_time - Start time of simulation (datetime or empty for relative time)
+            %
+            % Outputs:
+            %   total_cost - Gesamtkosten [CHF]
+            %   energy_cost - Kosten durch Stromtarife (Kauf/Verkauf) [CHF]
+            %   peak_cost - Kosten durch Spitzenlast [CHF]
+            %   energy_details - Struct mit Details zu Energie (Hoch-/Niedertarif)
+            
+            high_sell_price = electricity_cost_struct.high_sell_price;
+            high_buy_price = electricity_cost_struct.high_buy_price;
+            low_buy_price = electricity_cost_struct.low_buy_price;
+            low_sell_price = electricity_cost_struct.low_sell_price;
+            peak_price = electricity_cost_struct.peak_price;
+
+            simulation_range_steps = length(p_g_in);
+            energy_cost = 0.0;
+            
+            % Initialisiere Energie-Details
+            high_buy_energy = 0.0;
+            high_buy_cost = 0.0;
+            low_buy_energy = 0.0;
+            low_buy_cost = 0.0;
+            high_sell_energy = 0.0;
+            high_sell_cost = 0.0;
+            low_sell_energy = 0.0;
+            low_sell_cost = 0.0;
+
+            % Berechne Startzeit in Minuten seit Mitternacht
+            if nargin >= 6 && ~isempty(start_time) && isdatetime(start_time)
+                start_time_minutes = hour(start_time) * 60 + minute(start_time);
+            else
+                start_time_minutes = 0; % Fallback: Simulation startet um Mitternacht
+            end
+
+            for step = 1:simulation_range_steps
+                % Berechne aktuelle Tageszeit basierend auf echter Startzeit
+                current_time_minutes = mod(start_time_minutes + (step-1) * Ts * 60, 24*60);
+
+                % Bestimme Tarif basierend auf Tageszeit (7:00-20:00 = Hochtarif)
+                is_high_tariff = (current_time_minutes >= 7*60 && current_time_minutes < 20*60);
+                
+                if is_high_tariff
+                    buy_price = high_buy_price;
+                    sell_price = high_sell_price;
+                else
+                    buy_price = low_buy_price;
+                    sell_price = low_sell_price;
+                end
+
+                % Berechne Energie und Kosten für diesen Zeitschritt
+                % Energie (kWh) = Leistung (kW) * Zeit (h)
+                energy_consumed = (-p_g_in(step)) * Ts;  % kWh (positiv)
+                energy_sold = p_g_out(step) * Ts;        % kWh (positiv)
+                
+                % Akkumuliere Energiemengen nach Tariftyp
+                if is_high_tariff
+                    high_buy_energy = high_buy_energy + energy_consumed;
+                    high_buy_cost = high_buy_cost + energy_consumed * buy_price;
+                    high_sell_energy = high_sell_energy + energy_sold;
+                    high_sell_cost = high_sell_cost + energy_sold * sell_price;
+                else
+                    low_buy_energy = low_buy_energy + energy_consumed;
+                    low_buy_cost = low_buy_cost + energy_consumed * buy_price;
+                    low_sell_energy = low_sell_energy + energy_sold;
+                    low_sell_cost = low_sell_cost + energy_sold * sell_price;
+                end
+
+                % Gesamtkosten für diesen Zeitschritt
+                cost_step = energy_consumed * buy_price - energy_sold * sell_price;
+                energy_cost = energy_cost + cost_step;
+            end
+
+            % Berechne Spitzenlastgebühr
+            peak_cost = 0.0;
+            if electricity_cost_struct.use_peak_pricing
+                peak_load = max(-p_g_in); 
+
+                if ~electricity_cost_struct.use_constant_price
+                    peak_cost = peak_load * peak_price * obj.N_sim/(30*24*1/obj.Ts); % Annahme: 30 Tage im Monat
+                else
+                    peak_cost = peak_load * peak_price;
+                end
+            end
+            
+            % Gesamtkosten
+            total_cost = energy_cost + peak_cost;
+            
+            % Erstelle Energie-Details Struct
+            energy_details = struct(...
+                'high_buy_energy', high_buy_energy, ...
+                'high_buy_cost', high_buy_cost, ...
+                'low_buy_energy', low_buy_energy, ...
+                'low_buy_cost', low_buy_cost, ...
+                'high_sell_energy', high_sell_energy, ...
+                'high_sell_cost', high_sell_cost, ...
+                'low_sell_energy', low_sell_energy, ...
+                'low_sell_cost', low_sell_cost);
+        end
+
+        function prediction_sequence = generatePredictionSequence(obj)
+            % generatePredictionSequence Erzeugt eine Sequenz von NN-Predictions
+            %
+            % Diese Funktion erstellt eine Sequenz, die exakt so lang ist wie der
+            % simulierte Bereich (N_sim). Dabei werden komplette Prediction-Windows
+            % hintereinander gereiht: Bei jedem Schritt (mit Abstand = prediction_horizon)
+            % wird ein neues Fenster mit den aktuellen realen Daten als Input berechnet.
+            %
+            % WICHTIG: Die Prediction bei Zeitschritt k ist für die ZUKUNFT [k+1 ... k+pred_horizon]
+            %
+            % Output:
+            %   prediction_sequence - Vektor der Länge N_sim mit den NN-Predictions [W]
+            %
+            % Beispiel:
+            %   Wenn N_sim = 100 und prediction_horizon = 24:
+            %   - Bei k=1: Prediction für Zeitschritte 2-25
+            %   - Bei k=25: Prediction für Zeitschritte 26-49
+            %   - Bei k=49: Prediction für Zeitschritte 50-73
+            %   - Bei k=73: Prediction für Zeitschritte 74-97
+            %   - Bei k=97: Prediction für Zeitschritte 98-100 (letztes Window wird abgeschnitten)
+            
+            if ~obj.use_nn_predictor
+                warning('EnergyManagementSimulation:NoNNPredictor', ...
+                    'NN Predictor ist nicht aktiviert. Gebe Nullsequenz zurück.');
+                prediction_sequence = zeros(1, obj.N_sim);
+                return;
+            end
+            
+            if isempty(obj.real_data_table)
+                warning('EnergyManagementSimulation:NoRealData', ...
+                    'Real data nicht geladen. Gebe Nullsequenz zurück.');
+                prediction_sequence = zeros(1, obj.N_sim);
+                return;
+            end
+            
+            % Initialisiere Ausgabe-Sequenz mit NaN (erste Werte haben keine Prediction)
+            prediction_sequence = nan(1, obj.N_sim);
+            
+            % Hole Prediction-Horizont
+            pred_horizon = obj.nn_predictor.prediction_horizon;
+            
+            fprintf('Generiere Prediction-Sequenz über %d Zeitschritte mit Horizont %d...\n', ...
+                obj.N_sim, pred_horizon);
+            
+            % Iteriere über die Simulation mit Schritten von prediction_horizon
+            k = 1;
+            window_count = 0;
+            
+            while k <= obj.N_sim
+                window_count = window_count + 1;
+                
+                % Generiere Forecast für dieses Window bei Zeitschritt k
+                % Dieser forecast gilt für [k+1 ... k+pred_horizon]
+                forecast = obj.generateNNForecast(k);  % Gibt pred_horizon Werte zurück [W]
+                
+                % Berechne Start-Index für die Prediction-Einträge (k+1)
+                pred_start_idx = k + 1;
+                
+                % Prüfe ob wir noch im gültigen Bereich sind
+                if pred_start_idx > obj.N_sim
+                    break;  % Keine weiteren Predictions nötig
+                end
+                
+                % Berechne wie viele Werte wir von diesem Window brauchen
+                remaining_steps = obj.N_sim - pred_start_idx + 1;
+                steps_to_use = min(pred_horizon, remaining_steps);
+                
+                % Füge die Prediction-Werte in die Sequenz ein (ab k+1, nicht ab k)
+                prediction_sequence(pred_start_idx : pred_start_idx + steps_to_use - 1) = forecast(1:steps_to_use);
+                
+                % Progress output
+                if mod(window_count, 5) == 0 || k == 1
+                    fprintf('  Window %d: Prediction bei k=%d für Zeitschritte %d bis %d (verwendet %d von %d Predictions)\n', ...
+                        window_count, k, pred_start_idx, pred_start_idx + steps_to_use - 1, steps_to_use, pred_horizon);
+                end
+                
+                % Springe zum nächsten Window
+                k = k + pred_horizon;
+            end
+            
+            fprintf('Prediction-Sequenz generiert: %d Fenster, %d Werte total.\n\n', ...
+                window_count, obj.N_sim);
+
+            % disp('First 10 prediction values:');
+            % disp(prediction_sequence(1:10));
+        end
+
+        function result = getPredictionVsRealLoad(obj)
+            % getPredictionVsRealLoad Gibt Prediction-Sequenz, reale Last und Zeit zurück
+            %
+            % Diese Hilfsfunktion generiert die Prediction-Sequenz und extrahiert
+            % die entsprechenden realen Lastwerte und Zeitstempel für einen direkten Vergleich.
+            %
+            % Output:
+            %   result - Struct mit folgenden Feldern:
+            %       .prediction - NN-Predictions [W], Länge N_sim
+            %       .real_load  - Reale Lastwerte [W], Länge N_sim
+            %       .time       - Zeitvektor (datetime), Länge N_sim
+            
+            % Generiere Prediction-Sequenz
+            prediction_sequence = obj.generatePredictionSequence();
+            
+            % Extrahiere reale Lastwerte und Zeit für den Simulationsbereich
+            sim_indices = obj.sim_start_idx : (obj.sim_start_idx + obj.N_sim - 1);
+            real_load_sequence = obj.real_data_table.Load(sim_indices)';
+            time_sequence = obj.real_data_times(sim_indices)';
+            
+            % Erstelle Ausgabe-Struct
+            result = struct(...
+                'prediction', prediction_sequence, ...
+                'real_load', real_load_sequence, ...
+                't', time_sequence);
         end
     end
 end
