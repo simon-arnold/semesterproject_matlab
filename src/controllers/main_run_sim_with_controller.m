@@ -89,7 +89,6 @@ end
 
 
 %% MPC Cost 
-
 electricity_cost_struct = struct(...
     'use_peak_pricing', true, ...
     'high_buy_price', 0.2549, ...   % High tariff buy price in CHF/kWh
