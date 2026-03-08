@@ -268,14 +268,6 @@ classdef MPC_Controller < handle
 
         function plot_current_prediction_window(obj, k, p_b_ch_opt, p_b_dch_opt, p_g_in_opt, p_g_out_opt, current_battery_energy, u, p_in, load_curr_predict, pv_curr_predict, current_datetime, load_window_ground_truth)
             % Plotte die Ergebnisse der aktuellen Vorhersageperiode über das MPC Prediction Window
-            disp("Load window ground truth:");
-            disp(load_window_ground_truth);
-            disp("Load current predict(1):");
-            disp(load_curr_predict(1));
-            disp("load window ground truth shape:");
-            disp(size(load_window_ground_truth));
-            disp("load current predict shape:");
-            disp(size(load_curr_predict(1)));
             % Stelle sicher, dass load_window_ground_truth als Row-Vektor vorliegt
             load_ground_truth = [load_curr_predict(1), reshape(load_window_ground_truth, 1, [])];
             

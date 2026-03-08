@@ -174,83 +174,7 @@ classdef EnergyManagementSimulation < handle
             obj.history_simple.battery_energy(1) = obj.x_initial;
         end
         
-        %% Get Forecast Window
-        function [pv_window, load_window] = getForecastWindow(obj, k)
-            % getForecastWindow Extracts forecast window for current time step
-            %
-            % Inputs:
-            %   k - Current time step
-            %
-            % Outputs:
-            %   pv_window - PV forecast window (with optional noise)
-            %   load_window - Load forecast window (with optional noise)
-            
-            start_idx = k;
-            end_idx = k + obj.N_pred - 1;
-            
-            % Check if enough forecast data is available
-            if end_idx > length(obj.pv_forecast)
-                fprintf('Warning: Not enough forecast data! Using available data.\n');
-                end_idx = length(obj.pv_forecast);
-                current_N_pred = end_idx - start_idx + 1;
-                
-                pv_window = obj.pv_forecast(start_idx:end_idx);
-                load_window = obj.load_forecast(start_idx:end_idx);
-                
-                % Fill missing data with last available values
-                if current_N_pred < obj.N_pred
-                    pv_window = [pv_window, ...
-                                repmat(pv_window(end), 1, obj.N_pred - current_N_pred)];
-                    load_window = [load_window, ...
-                                  repmat(load_window(end), 1, obj.N_pred - current_N_pred)];
-                end
-            else
-                pv_window = obj.pv_forecast(start_idx:end_idx);
-                load_window = obj.load_forecast(start_idx:end_idx);
-            end
-            
-        end
-        
-        %% Apply MPC Controller
-        function [p_b_ch, p_b_dch, p_g_in_opt, p_g_out_opt] = applyMPCController(obj, k)
-            % applyMPCController Computes MPC control action for current time step
-            %
-            % Inputs:
-            %   k - Current time step
-            %
-            % Outputs:
-            %   p_b_ch - Battery charging power
-            %   p_b_dch - Battery discharging power
-            %   p_g_in_opt - Grid consumption (from optimizer)
-            %   p_g_out_opt - Grid feed-in (from optimizer)
-            
-            % Get forecast window
-            [pv_window, load_window] = obj.getForecastWindow(k);
-
-            % Get current battery state
-            battery_state = obj.history_mpc.battery_energy(k);
-
-            % Get current PV and Load values (absolute index if real data available)
-            if ~isempty(obj.real_data_table)
-                abs_idx = obj.sim_start_idx + k - 1;
-                pv_current = obj.real_data_table.PV_forecast(abs_idx) / 1000;  % W to kW
-                load_current = obj.real_data_table.Load(abs_idx) / 1000;      % W to kW
-            else
-                pv_current = obj.pv_forecast(k);
-                load_current = obj.load_forecast(k);
-            end
-
-            % Compute optimal control action (pass current values + forecast)
-            [p_b_ch_opt, p_b_dch_opt, p_g_in_opt_full, p_g_out_opt_full] = ...
-                obj.mpc_controller.computeControlAction(battery_state, pv_current, load_current, pv_window, load_window);
-            
-            % Extract first control action (receding horizon)
-            p_b_ch = p_b_ch_opt(1);
-            p_b_dch = p_b_dch_opt(1);
-            p_g_in_opt = p_g_in_opt_full(1);
-            p_g_out_opt = p_g_out_opt_full(1);
-        end
-        
+   
         %% Apply Simple Controller
         function [p_b_ch, p_b_dch] = applySimpleController(obj, k)
             % applySimpleController Computes simple control action for current time step
@@ -368,31 +292,7 @@ classdef EnergyManagementSimulation < handle
                 (1/obj.nu_dch) * p_b_dch * obj.Ts - ...
                 obj.L_bat * obj.history_simple.battery_energy(k) * obj.Ts;
         end
-        
-        %% Run MPC Simulation
-        function runMPCSimulation(obj)
-            % runMPCSimulation Runs the complete MPC simulation
-            
-            fprintf('Starting MPC Receding Horizon Simulation over %d time steps (%.1f hours)...\n', ...
-                obj.N_sim, obj.N_sim*obj.Ts);
-            
-            for k = 1:obj.N_sim
-                % Progress output
-                if mod(k, 10) == 0 || k == 1 || k == obj.N_sim
-                    fprintf('MPC: Time step %d/%d (%.2f h) - %.1f%% complete\n', ...
-                        k, obj.N_sim, (k-1)*obj.Ts, k/obj.N_sim*100);
-                end
-                
-                % Apply MPC controller
-                [p_b_ch, p_b_dch, p_g_in_opt, p_g_out_opt] = obj.applyMPCController(k);
-                
-                % Update state and history
-                obj.updateMPCState(k, p_b_ch, p_b_dch, p_g_in_opt, p_g_out_opt);
-            end
-            
-            fprintf('MPC Receding Horizon Simulation completed.\n\n');
-        end
-        
+             
         %% Run Simple Controller Simulation
         function runSimpleSimulation(obj)
             % runSimpleSimulation Runs the complete simple controller simulation
@@ -483,51 +383,7 @@ classdef EnergyManagementSimulation < handle
                 'E_bat', obj.E_bat, ...
                 'DOD', obj.DOD);
         end
-        
-        %% Run Full Horizon Optimization (for comparison)
-        function runFullHorizonOptimization(obj)
-            % runFullHorizonOptimization Runs optimization over entire horizon
-            % (for debugging and comparison purposes)
-            
-            fprintf('Performing comparison optimization over entire horizon for checking if managed to solve the problem\n');
-            
-            % Get PV and Load forecasts depending on data source
-            if ~isempty(obj.real_data_table)
-                % Use real data for the first prediction horizon
-                abs_start = obj.sim_start_idx;
-                abs_end = abs_start + obj.N_pred - 1;
-                
-                if abs_end > height(obj.real_data_table)
-                    fprintf('Warning: Not enough data for full horizon optimization. Skipping.\n');
-                    return;
-                end
-                
-                pv_test = obj.real_data_table.PV_forecast(abs_start:abs_end) / 1000;  % W to kW
-                load_test = obj.real_data_table.Load(abs_start:abs_end) / 1000;  % W to kW
-                
-                % Ensure row vectors
-                pv_test = pv_test(:)';
-                load_test = load_test(:)';
-            else
-                % Use generated forecasts
-                pv_test = obj.pv_forecast(1:obj.N_pred);
-                load_test = obj.load_forecast(1:obj.N_pred);
-            end
-            
-            [p_b_ch_opt_full, p_b_dch_opt_full, p_g_in_opt_full, p_g_out_opt_full] = ...
-                obj.mpc_controller.computeControlAction(...
-                    obj.x_initial, ...
-                    pv_test, ...
-                    load_test);
-            
-            disp('Battery charging power:');
-            disp(p_b_ch_opt_full(1:5));
-            disp('Battery discharging power:'); 
-            disp(p_b_dch_opt_full(1:5));
-            disp('Grid consumption power:');
-            disp(p_g_in_opt_full(1:5));
-        end
-        
+              
         %% Load Real Data
         function loadRealData(obj, start_date, end_date, house_type)
             % loadRealData Loads real data from MAT file for simulation
@@ -542,8 +398,6 @@ classdef EnergyManagementSimulation < handle
             [obj.real_data_table, obj.real_data_times] = ...
                 load_real_data(start_date, end_date, house_type, 'HistoryLength', obj.history_length, 'ForecastLength', obj.N_pred);
 
-            disp('Real data table dimensions:');
-            disp(size(obj.real_data_table));
 
             
             
