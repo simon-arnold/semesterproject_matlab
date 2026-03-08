@@ -1,0 +1,183 @@
+close all
+%clc
+clear
+
+%% ========================================================================
+%  ENERGY MANAGEMENT SIMULATION - Main Script
+%  ========================================================================
+%  This script demonstrates the use of the EnergyManagementSimulation cl    ass
+%  to simulate and compare MPC and simple controller strategies.
+%  ========================================================================
+
+%% Simulation Parameters
+Ts = 15/60; % Time step in hours (15 minutes)
+N_pred = 48; % Prediction horizon: 12 hours in time steps
+x_initial = 4.0; % Initial battery capacity in kWh (must be > Bat. Cap. * (1-max DOD) kWh)
+
+
+%% Define Simulation Time Frame
+%---------------------House E-----------------------
+% start_date = datetime(2019, 4, 1, 0, 0, 0); 
+% end_date = datetime(2019, 5, 1, 0, 0, 0);  
+
+% start_date = datetime(2019, 5, 1, 0, 0, 0); 
+% end_date = datetime(2019, 6, 1, 0, 0, 0);  
+
+
+% start_date = datetime(2019, 7, 1, 0, 0, 0);
+% end_date = datetime(2019, 7, 30, 0, 0, 0);   
+
+
+%---------------------House A-----------------------
+% start_date = datetime(2018, 9, 1, 0, 0, 0); % Nicht gut, aber ganzer monat
+% end_date = datetime(2018, 10, 1, 0, 0, 0);
+
+start_date = datetime(2018, 9, 15, 0, 0, 0); 
+end_date = datetime(2018, 9, 18, 0, 0, 0);
+
+
+
+
+N_sim = ceil(hours(end_date - start_date) / Ts);  
+disp(['Calculated N_sim: ', num2str(N_sim)]);
+
+house_type = 'A_without'; % Set house type to 'E' or 'A_with' or 'A_without' based on the dataset you want to use
+
+%------------------Settings for plotting MPC over Prediction horizon----------------
+MPC_plotting_params = struct(...
+    'num_MPC_horizons', 2, ...
+    'list_of_MPC_horizons', [datetime(2019, 3, 23, 18, 15, 0), datetime(2018, 9, 17, 8, 0, 0)], ...
+    'start_date', start_date, ...
+    'end_date', end_date,  ...
+    'plot_with_current_datetime', true ... 
+);
+
+
+%% Battery Parameters
+battery_params_E = struct(...
+    'nu_ch', 0.93, ...          % Charging efficiency
+    'nu_dch', 0.93, ...         % Discharging efficiency
+    'L_bat', 0, ...             % Battery loss factor
+    'E_bat', 5.100, ...             % Battery capacity in kWh
+    'DOD', 0.8, ...             % Depth of discharge
+    'P_batconv_max', 2.200, ... % Maximum battery converter power
+    'P_gridcons_max', 30, ...    % Maximum grid consumption power
+    'nu_pv', 0.96 ...
+);
+
+battery_params_A = struct(...
+    'nu_ch', 0.93, ...          % Charging efficiency
+    'nu_dch', 0.93, ...         % Discharging efficiency
+    'L_bat', 0, ...             % Battery loss factor
+    'E_bat', 5.1, ...             % Battery capacity in kWh
+    'DOD', 0.9, ...             % Depth of discharge
+    'P_batconv_max', 2.200, ... % Maximum battery converter power
+    'P_gridcons_max', 30, ...    % Maximum grid consumption power
+    'nu_pv', 0.96 ...
+);
+
+switch house_type
+    case 'E'
+        battery_params = battery_params_E;
+        disp('Using battery parameters for House Type E');
+    case {'A_with', 'A_without'}
+        battery_params = battery_params_A;
+        disp('Using battery parameters for House Type A');
+    otherwise
+        error('Invalid house_type: %s. Expected "E", "A_with" or "A_without".', house_type);
+end
+
+
+%% MPC Cost 
+electricity_cost_struct = struct(...
+    'use_peak_pricing', true, ...
+    'high_buy_price', 0.2549, ...   % High tariff buy price in CHF/kWh
+    'low_buy_price', 0.2209, ...    % Low tariff buy price in CHF/kWh
+    'high_sell_price', 0.115, ...  % High tariff sell price in CHF/kWh
+    'low_sell_price', 0.088, ...   % Low tariff sell price in CHF/kWh
+    'peak_price', 7.51, ...        % Peak price in CHF/Month/kWh
+    'use_constant_price', true ...
+);
+
+
+%% Plot Options
+plot_options = struct(...
+    'N_sim', N_sim, ...
+    'N_pred', N_pred, ...
+    'Ts', Ts, ...
+    'plot_simple_controller', true ...
+);
+
+%% Initialize Controllers and create sim
+mpc_controller = MPC_Controller(...
+    24, N_pred, Ts, ...
+    battery_params.nu_ch, battery_params.nu_dch, ...
+    battery_params.L_bat, battery_params.E_bat, ...
+    battery_params.DOD, battery_params.P_batconv_max, ...
+    battery_params.P_gridcons_max, battery_params.nu_pv, ...
+    electricity_cost_struct, MPC_plotting_params);
+
+simple_controller_obj = simple_controller(...
+    Ts, battery_params.nu_ch, battery_params.nu_dch, ...
+    battery_params.E_bat, battery_params.DOD, ...
+    battery_params.P_batconv_max, battery_params.P_gridcons_max, ...
+    battery_params.nu_pv);
+
+sim_params = struct(...
+    'Ts', Ts, ...
+    'N_pred', N_pred, ...
+    'N_sim', N_sim, ...
+    'x_initial', x_initial, ...
+    'mpc_controller', mpc_controller, ...
+    'simple_controller', simple_controller_obj, ...
+    'house_type', house_type ...
+);
+
+sim = EnergyManagementSimulation(...
+    sim_params, battery_params, ...
+    'UseNNPredictor', true, ...
+    'PredictionHorizon', N_pred, ...
+    'UseRealData', true, ...
+    'StartDate', start_date, ...
+    'EndDate', end_date);
+
+%% ========================================================================
+%  MAIN SIMULATION
+%  ========================================================================
+
+fprintf('=================================================================\n');
+fprintf('  Energy Management Simulation\n');
+fprintf('=================================================================\n');
+fprintf('Simulation horizon: %.1f hours (%d time steps)\n', N_sim*Ts, N_sim);
+fprintf('Prediction horizon: %.1f hours (%d time steps)\n', N_pred*Ts, N_pred);
+fprintf('=================================================================\n\n');
+
+
+% Run MPC simulation using the NN predictor with real data
+sim.runMPCSimulationWithNN();
+
+% Run Simple controller simulation with real data
+if plot_options.plot_simple_controller
+    sim.runSimpleSimulation();
+end
+
+%% ========================================================================
+%  RESULTS AND PLOTTING
+%  ========================================================================
+
+fprintf('=================================================================\n');
+fprintf('  Generating Results\n');
+fprintf('=================================================================\n');
+
+% Get results from simulation
+Correct_Load_PV_data = sim.getCorrectLoadPV();
+results_struct = sim.getResultsStruct();
+model_parameters = sim.getModelParameters();
+prediciton_result = sim.getPredictionVsRealLoad();
+
+% Plot results
+plot_controller_results(Correct_Load_PV_data, results_struct, prediciton_result, model_parameters, plot_options);
+sim.calculate_electricity_cost_performance_controllers(electricity_cost_struct, true);
+
+fprintf('\nSimulation completed successfully!\n');
+
