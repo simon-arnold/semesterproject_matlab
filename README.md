@@ -2,7 +2,7 @@
 
 
 
-> **Fair warning:** This code runs — under the right conditions, with the right data in the right folder. It is not production-grade. There is a lot of learning and debugging baked into every corner of this codebase. But with a little patience and curiosity you will get it running, and hopefully even understand what it is doing. Good luck and have fun 😉. 
+> **Fair warning:** This code runs — under the right conditions, with the right data in the right folder. It is not production-grade. There is a lot of learning and debugging baked into every corner of this codebase. But with a little patience and curiosity, you will get it running. Good luck and have fun 😉. 
 
 ---
 
